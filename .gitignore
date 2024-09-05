@@ -1,0 +1,7 @@
+datasets/
+SEM_DATA/
+
+*.onnx
+*.jpg
+*.png
+!u2net.png
