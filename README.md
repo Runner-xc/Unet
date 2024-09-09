@@ -5,7 +5,7 @@
 ```
 ├── utils: 工具箱
 ├── SEM_Data.py:      自定义数据集读取相关代码
-├── predict.py:       预测代码
+├── predict.py:       预测代码   (待实现)
 ├── train.py:         GPU 或 CPU 训练代码
 ├── transforms.py:    数据预处理相关代码  （待实现）
 └── requirements.txt: 项目依赖
