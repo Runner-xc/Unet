@@ -170,10 +170,10 @@ class U2net(nn.Module):
         else:
             return torch.sigmoid(x)
 
-def u2net_full_config(out_ch: int = 3):
+def u2net_full_config(out_ch: int = 4):
     cfg = {
         # height, in_ch, mid_ch, out_ch, RSU4F, side
-        "encode": [[7, 1, 32, 64, False, False],      # En1
+        "encode": [[7, 3, 32, 64, False, False],      # En1
                    [6, 64, 32, 128, False, False],    # En2
                    [5, 128, 64, 256, False, False],   # En3
                    [4, 256, 128, 512, False, False],  # En4
@@ -189,10 +189,10 @@ def u2net_full_config(out_ch: int = 3):
 
     return U2net(cfg, out_ch)
 
-def u2net_lite_config(out_ch: int = 3):
+def u2net_lite_config(out_ch: int = 4):
     cfg = {
         # height, in_ch, mid_ch, out_ch, RSU4F, side
-        "encode": [[7, 1, 16, 64, False, False],  # En1
+        "encode": [[7, 3, 16, 64, False, False],  # En1
                    [6, 64, 16, 64, False, False],  # En2
                    [5, 64, 16, 64, False, False],  # En3
                    [4, 64, 16, 64, False, False],  # En4
@@ -218,7 +218,8 @@ def convert_onnx(model, save_path):
                       save_path,  # where to save the model (can be a file or file-like object)
                       export_params=True,
                       opset_version=11)
-    
+ 
+
 if __name__ == '__main__':
 # n_m = RSU(height=7, in_ch=3, mid_ch=12, out_ch=3)
 # convert_onnx(n_m, "RSU7.onnx")
@@ -227,4 +228,5 @@ if __name__ == '__main__':
 # convert_onnx(n_m, "RSU4F.onnx")
 
     u2net = u2net_full_config()
-    convert_onnx(u2net, "u2net_full_config.onnx")
+    
+    # convert_onnx(u2net, "u2net_full_config.onnx")

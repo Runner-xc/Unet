@@ -6,13 +6,14 @@
 """
 import pandas as pd
 
-def data_split_to_train_val_test(data_path, train_ratio=0.8, val_ratio=0.1):
+def data_split_to_train_val_test(data_path, train_ratio=0.8, val_ratio=0.1, save_path=None):
     """
     data_path: csv数据集文件路径
     train_ratio: 训练集比例  默认值：0.8
-    val_ratio:   验证集比例  默认值：0.1    
+    val_ratio:   验证集比例  默认值：0.1
+    save_path:   保存数据集的目录路径，如果不提供，则不保存文件
     """
-
+    
     # 读取数据集
     df = pd.read_csv(data_path)
 
@@ -22,15 +23,20 @@ def data_split_to_train_val_test(data_path, train_ratio=0.8, val_ratio=0.1):
     # 计算训练集、验证集、测试集的长度
     train_len = int(data_len * train_ratio)
     val_len = int(data_len * val_ratio)
-   
+    test_len = data_len - train_len - val_len  
+
     # 划分数据集
     train_data = df.iloc[:train_len]
     val_data = df.iloc[train_len: train_len + val_len]
     test_data = df.iloc[train_len + val_len:]
 
+    # 如果提供了保存路径，则保存数据集
+    if save_path:
+        train_data.to_csv(f'{save_path}/train_data.csv', index=False)
+        val_data.to_csv(f'{save_path}/val_data.csv', index=False)
+        test_data.to_csv(f'{save_path}/test_data.csv', index=False)
 
-
-    return train_data, val_data, test_data
+    return f'{save_path}/train_data.csv', f'{save_path}/val_data.csv', f'{save_path}/test_data.csv'
 
 if __name__ == '__main__':
     data_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/SEM_path.csv"

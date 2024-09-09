@@ -1,5 +1,7 @@
 datasets/
 SEM_DATA/
+../results/
+__pycache__/
 
 *.onnx
 *.jpg

@@ -39,13 +39,14 @@ class Evaluate_Metric(nn.Module):
         class_1 = img_pred[:, 1, ...]
         class_2 = img_pred[:, 2, ...]
         class_3 = img_pred[:, 3, ...]
-        pre_class_list = [class_0, class_1, class_2, class_3]  # 舍弃背景类
+        pre_class_list = [class_1, class_2, class_3]  # 舍弃背景类
 
+        img_mask = F.one_hot(img_mask, self.num_classes).float()
         mask_0 = img_mask[:, 0, ...]
         mask_1 = img_mask[:, 1, ...]
         mask_2 = img_mask[:, 2, ...]
         mask_3 = img_mask[:, 3, ...]
-        mask_class_list = [mask_0, mask_1, mask_2, mask_3]
+        mask_class_list = [mask_1, mask_2, mask_3]
 
         return pre_class_list, mask_class_list
 
@@ -72,9 +73,9 @@ class Evaluate_Metric(nn.Module):
             recall = TP / (TP + FN)
             recall_dict[class_name] = recall
         
-        OM_rc = recall_dict['Organic matter'].item()
-        OP_rc = recall_dict['Organic pores'].item()
-        IOP_rc = recall_dict['Inorganic pores'].item()
+        OM_rc = recall_dict['Organic matter']
+        OP_rc = recall_dict['Organic pores']
+        IOP_rc = recall_dict['Inorganic pores']
         recall = (OM_rc + OP_rc + IOP_rc) / len(class_names)
 
         return OM_rc, OP_rc, IOP_rc, recall
@@ -98,9 +99,9 @@ class Evaluate_Metric(nn.Module):
             precision = TP / (TP + FP)
             precision_dict[class_name] = precision
 
-        OM_pc = precision_dict['Organic matter'].item()
-        OP_pc = precision_dict['Organic pores'].item()
-        IOP_pc = precision_dict['Inorganic pores'].item()
+        OM_pc = precision_dict['Organic matter']
+        OP_pc = precision_dict['Organic pores']
+        IOP_pc = precision_dict['Inorganic pores']
         precision = (OM_pc + OP_pc + IOP_pc) / len(class_names)
 
         return OM_pc, OP_pc, IOP_pc, precision
@@ -114,28 +115,16 @@ class Evaluate_Metric(nn.Module):
         OM_pc, OP_pc, IOP_pc, precision = self.Precision(img_pred, img_mask)
 
         # OM_F1
-        if (OM_rc + OM_pc) == 0:
-            OM_F1 = 0.0
-        else:
-            OM_F1 = 2 * (OM_rc * OM_pc) / (OM_rc + OM_pc)
+        OM_F1 = 2 * (OM_rc * OM_pc) / (OM_rc + OM_pc)
 
         # OP_F1
-        if (OP_rc + OP_pc) == 0:
-            OP_F1 = 0.0
-        else:
-            OP_F1 = 2 * (OP_rc * OP_pc) / (OP_rc + OP_pc)
+        OP_F1 = 2 * (OP_rc * OP_pc) / (OP_rc + OP_pc)
 
         # IOP_F1
-        if (IOP_rc + IOP_pc) == 0:
-            IOP_F1 = 0.0
-        else:
-            IOP_F1 = 2 * (IOP_rc * IOP_pc) / (IOP_rc + IOP_pc)
+        IOP_F1 = 2 * (IOP_rc * IOP_pc) / (IOP_rc + IOP_pc)
 
         # F1_score
-        if (recall + precision) == 0:
-            F1_score = 0.0
-        else:
-            F1_score = 2 * (recall * precision) / (recall + precision)
+        F1_score = 2 * (recall * precision) / (recall + precision)
         
         return OM_F1, OP_F1, IOP_F1, F1_score
 
@@ -156,9 +145,9 @@ class Evaluate_Metric(nn.Module):
             dice = (2 * intersection + smooth) / (union + smooth)
             dice_dict[class_name] = dice
         
-        OM_dice = dice_dict['Organic matter'].item()
-        OP_dice = dice_dict['Organic pores'].item()
-        IOP_dice = dice_dict['Inorganic pores'].item()
+        OM_dice = dice_dict['Organic matter']
+        OP_dice = dice_dict['Organic pores']
+        IOP_dice = dice_dict['Inorganic pores']
         dice = (OM_dice + OP_dice + IOP_dice) / len(class_names)
 
         return OM_dice, OP_dice, IOP_dice, dice
@@ -172,7 +161,16 @@ class Evaluate_Metric(nn.Module):
         dice = self.Dice(img_pred, img_mask)
         f1_score = self.F1_score(img_pred, img_mask)
 
-        metrics = [recall, precision, dice, f1_score]
-        metrics = np.stack(metrics, axis=0)
+         # 确保每个指标都是一个数组，并将它们移动到 CPU
+        recall_np = recall.cpu().numpy() if isinstance(recall, torch.Tensor) else np.array(recall)
+        precision_np = precision.cpu().numpy() if isinstance(precision, torch.Tensor) else np.array(precision)
+        dice_np = dice.cpu().numpy() if isinstance(dice, torch.Tensor) else np.array(dice)
+        f1_score_np = f1_score.cpu().numpy() if isinstance(f1_score, torch.Tensor) else np.array(f1_score)
 
-        return metrics
+        # 创建一个包含所有指标的列表
+        metrics = [recall_np, precision_np, dice_np, f1_score_np]
+
+        # 堆叠指标
+        metrics_np = np.stack(metrics, axis=0)
+
+        return metrics_np
