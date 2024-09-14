@@ -1,8 +1,8 @@
 import os
+import cv2
 import torch
 import pandas as pd
 import numpy as np
-import torchvision.transforms as transforms
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 """
@@ -43,10 +43,9 @@ def save_sem_paths_to_csv(root_path, csv_path, csv_name) -> pd.DataFrame:
     return df
 
 class SEM_DATA(Dataset):
-    def __init__(self, data_path, img_transforms=None, mask_transforms=None):
+    def __init__(self, data_path, transforms=None):
         self.data_path = data_path
-        self.img_transforms = img_transforms
-        self.mask_transforms = mask_transforms
+        self.transforms = transforms
 
     def __len__(self):
         df = pd.read_csv(self.data_path)
@@ -66,33 +65,36 @@ class SEM_DATA(Dataset):
         assert os.path.exists(mask_path), f"The mask path '{mask_path}' does not exist."
         
         # 读取数据 
-        img = Image.open(img_path)
-        mask = Image.open(mask_path)
-        img_array = np.array(img)
-        mask_array = np.array(mask)
-
+        # img = Image.open(img_path)
+        # mask = Image.open(mask_path)
+        # img_array = np.array(img)
+        # mask_array = np.array(mask)
+        
+        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+    
         # 转为tensor 不能使用ToTensor(),  
         # 1.变成3通道 
         # 2.ToTensor()会对数据做归一化，将[0,255] -> [0, 1] 并且数据类型为float32
 
-        mask_tensor = torch.tensor(mask_array)
+        # mask_tensor = torch.tensor(mask_array)
 
-        if self.img_transforms is not None:
-            img = self.img_transforms(img_array)
-        if self.mask_transforms is not None:
-            mask = self.mask_transforms(mask_tensor)
+        if self.transforms is not None:
+            data = self.transforms(img, mask)
 
-        return img, mask
+        return data
 
     def __getitem__(self, index):
         data = self.load_data(index=index)
+
         return data
           
 if __name__ == '__main__':
     #数据集路径
     root_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA'
-    csv_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV'
-    csv_name = 'SEM_path.csv'
+    csv_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/csv'
+    csv_name = 'rock_sem_320.csv'
     save_sem_paths_to_csv(root_path, csv_path, csv_name)
     # # 转换
     # img_compose = transforms.Compose([

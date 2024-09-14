@@ -168,7 +168,7 @@ class U2net(nn.Module):
             # do not use torch.sigmoid for amp safe
             return [x] + side_outputs
         else:
-            return torch.sigmoid(x)
+            return torch.softmax(x, dim=1) 
 
 def u2net_full_config(out_ch: int = 4):
     cfg = {

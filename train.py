@@ -12,10 +12,41 @@ from model.u2net import u2net_full_config, u2net_lite_config
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
+from utils.model_initial import *
 from loss_fn import *
 from torch.amp import GradScaler, autocast
 from metrics import Evaluate_Metric
 from torch.utils.tensorboard import SummaryWriter
+import utils.transforms as T
+
+
+class SODPresetTrain:
+    def __init__(self, base_size: Union[int, List[int]], crop_size: int,
+                 hflip_prob=0.5, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        self.transforms = T.Compose([
+            T.ToTensor(),
+            T.Resize(base_size),
+            T.RandomCrop(crop_size),
+            T.RandomHorizontalFlip(hflip_prob),
+            T.Normalize(mean=mean, std=std)
+        ])
+
+    def __call__(self, img, target):
+        data = self.transforms(img, target)
+        return data
+
+class SODPresetEval:
+    def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        self.transforms = T.Compose([
+            T.ToTensor(),
+            T.Resize(base_size),
+            T.Normalize(mean=mean, std=std),
+        ])
+
+    def __call__(self, img, target):
+        data = self.transforms(img, target)
+        return data
+    
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -42,9 +73,9 @@ def main(args):
     batch_size = args.batch_size
 
     # 用来保存训练以及验证过程中信息
-    save_root_path = args.save_root_path
-    if not os.path.exists(save_root_path):
-        os.makedirs(save_root_path)
+    save_scores_path = args.save_scores_path
+    if not os.path.exists(save_scores_path):
+        os.makedirs(save_scores_path)
 
     # 日志保存路径
     writer = SummaryWriter(f'./results/logs/{args.log_name}_{datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}')
@@ -52,26 +83,30 @@ def main(args):
     """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     train_ratio = args.train_ratio
     val_ratio = args.val_ratio
-    # 预处理
-    img_compose  =  transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.GaussianBlur((3, 3)),
-                    transforms.RandomHorizontalFlip(p=0.5),
-                    transforms.Normalize(mean=[0.485], std=[0.229])])
     
-    mask_compose =  transforms.Compose([
-                    transforms.RandomHorizontalFlip(p=0.5)])
+    
+    # 预处理
+    # img_compose  =  transforms.Compose([
+    #                 transforms.ToTensor(),
+    #                 transforms.Resize((320, 320)),
+    #                 transforms.GaussianBlur((3, 3)),
+    #                 transforms.RandomHorizontalFlip(p=0.5),
+    #                 transforms.Normalize(mean=[0.485], std=[0.229])])
+    
+    # mask_compose =  transforms.Compose([
+    #                 transforms.Resize((320, 320)),
+    #                 transforms.RandomHorizontalFlip(p=0.5)])
+    
+    
     
     train_datasets, val_datasets, train_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio, val_ratio,
-                                                                                          save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV')# 保存划分好的数据集路径
+                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV')# 保存划分好的数据集路径
     # 读取数据集
     train_datasets = SEM_DATA(train_datasets, 
-                              img_transforms=img_compose, 
-                              mask_transforms=mask_compose)
+                              transforms=SODPresetTrain([320, 320], crop_size=320))
     
     val_datasets = SEM_DATA(val_datasets, 
-                            img_transforms=img_compose, 
-                            mask_transforms=mask_compose)
+                            transforms=SODPresetEval([320, 320]))
     
     num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
     train_dataloader = DataLoader(train_datasets, 
@@ -94,6 +129,8 @@ def main(args):
         model = u2net_lite_config()
     else:
         raise ValueError("model must be 'u2net_full' or 'u2net_lite'.")
+
+    kaiming_initial(model)
     model.to(device)
 
     # 优化器
@@ -114,12 +151,10 @@ def main(args):
         loss_fn = CrossEntropyLoss()
     elif args.loss_fn == 'DiceLoss':
         loss_fn = DiceLoss()
-    elif args.loss_fn == 'SurfaceLoss':
-        loss_fn = SurfaceLoss()
     elif args.loss_fn == 'FocalLoss':
         loss_fn = Focal_Loss()
     else:
-        raise ValueError("loss function must be 'CrossEntropy', 'FocalLoss', 'DiceLoss' or 'SurfaceLoss'.")
+        raise ValueError("loss function must be 'CrossEntropy', 'FocalLoss', 'DiceLoss'.")
     # 缩放器
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
     Metrics = Evaluate_Metric()
@@ -137,23 +172,25 @@ def main(args):
         # 记录时间
         start_time = time.time()
         # 训练
-        train_OM_loss, train_OP_loss, train_IOP_loss, train_mean_loss = train_one_epoch(model, 
+        epoch_train_loss, epoch_OM_loss, epoch_OP_loss, epoch_IOP_loss = train_one_epoch(model, 
                                                                                         optimizer, 
                                                                                         epoch, 
                                                                                         train_dataloader, 
                                                                                         device=device, 
                                                                                         loss_fn=loss_fn, 
                                                                                         scaler=scaler) # loss
+
+        
         save_file = {"model": model.state_dict(),
                      "optimizer": optimizer.state_dict(),
                      "Metrics": Metrics.state_dict(),
                      "epoch": epoch,
                      "args": args}
         # 求平均
-        train_OM_loss = train_OM_loss / len(train_dataloader)
-        train_OP_loss = train_OP_loss / len(train_dataloader)
-        train_IOP_loss = train_IOP_loss / len(train_dataloader)
-        train_mean_loss = train_mean_loss / len(train_dataloader)
+        train_OM_loss = epoch_OM_loss / len(train_dataloader)
+        train_OP_loss = epoch_OP_loss / len(train_dataloader)
+        train_IOP_loss = epoch_IOP_loss / len(train_dataloader)
+        train_mean_loss = epoch_train_loss / len(train_dataloader)
 
         # 记录日志
         writer.add_scalars('train/Loss', 
@@ -168,6 +205,7 @@ def main(args):
         train_cost_time = end_time - start_time
 
         # 打印
+
         print(f"[epoch: {epoch}]\n"
               f"train_OM_loss: {train_OM_loss:.3f}\n"
               f"train_OP_loss: {train_OP_loss:.3f}\n"
@@ -183,7 +221,7 @@ def main(args):
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
             val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss, Metric_list= evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
-            
+
             # 求平均
             val_OM_loss = val_OM_loss / len(val_dataloader)
             val_OP_loss = val_OP_loss / len(val_dataloader)
@@ -269,11 +307,11 @@ def main(args):
             
             
             # 保存指标
-            metrics_table_header = ['Metrics_Name', 'mean', 'OM', 'OP', 'IOP']
+            metrics_table_header = ['Metrics_Name', 'OM', 'OP', 'IOP', 'Mean']
             metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores']
             epoch_s = f" 👉 epoch :{epoch} 👈\n"
             time_s = f" 👉 time :{datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} 👈\n"
-            cost_s = f" 👉 cost_time :{val_cost_time/60:.2f}mins 👈\n"
+            cost_s = f" 👉 cost_time :{val_cost_time / 60:.2f}mins 👈\n"
             metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
             metrics_table = [[metric_name,
                               metrics_dict[metric_name][0],
@@ -293,9 +331,11 @@ def main(args):
 
             # 保存结果
             results_file = f"{log_name}.txt"
-            file_path = os.path.join(save_root_path, results_file)
+            file_path = os.path.join(save_scores_path, results_file)
             with open(file_path, "a") as f:
                 f.write(write_info)
+        # loss清零
+
 
         # 保存best模型
         if not os.path.exists("results/save_weights"):
@@ -320,12 +360,12 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
 
-    parser.add_argument('--data_path', type=str, default="U-2-Net/SEM_DATA/CSV/SEM_int_path.csv", help="path to csv dataset")
+    parser.add_argument('--data_path', type=str, default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_320.csv", help="path to csv dataset")
     
     parser.add_argument('--model', type=str, default="u2net_full", help="model name")
-    parser.add_argument('--loss_fn', type=str, default='CrossEntropyLoss', help='loss function')
-    parser.add_argument('--optimizer', type=str, default='AdamW')
-    parser.add_argument('--save_root_path', type=str, default='results/save_scores', help="root path to save scores on training and valing")
+    parser.add_argument('--loss_fn', type=str, default='FocalLoss', help='loss function')
+    parser.add_argument('--optimizer', type=str, default='RMSprop')
+    parser.add_argument('--save_scores_path', type=str, default='results/save_scores', help="root path to save scores on training and valing")
     parser.add_argument('--log_name', type=str, default='u2net')
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--amp', type=bool, default=True, help='use mixed precision training or not')
@@ -335,10 +375,10 @@ if __name__ == '__main__':
     parser.add_argument('--val_ratio', type=float, default=0.1)
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
-    parser.add_argument('--end_epoch', type=int, default=100, help='ending epoch')
+    parser.add_argument('--end_epoch', type=int, default=200, help='ending epoch')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--wd', type=float, default=0.01, help='weight decay')
-    parser.add_argument('--eval_interval', type=int, default=10, help='interval for evaluation')
+    parser.add_argument('--wd', type=float, default=0.001, help='weight decay')
+    parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
   
 
     args = parser.parse_args()

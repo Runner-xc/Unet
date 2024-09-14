@@ -17,12 +17,13 @@ import torch.nn.functional as F
 class Evaluate_Metric(nn.Module):
     def __init__(self):
         super(Evaluate_Metric, self).__init__()
-        self.class_names = ['background',
+        self.class_names = [
+                            'Background',   
                             'Organic matter', 
                             'Organic pores', 
                             'Inorganic pores']
         self.labels = {
-            'background':0,
+            'Background':0,
             'Organic matter':1,
             'Organic pores':2,
             'Inorganic pores':3
@@ -31,8 +32,8 @@ class Evaluate_Metric(nn.Module):
 
     def split_class(self, img_pred, img_mask):
         """
-        img_pred: 预测值 (batch, 3, h, w)
-        img_mask: 标签值 (batch, 1, h, w) -> one_hot (batch, 3, h, w)
+        img_pred: 预测值 (batch, 4, h, w)
+        img_mask: 标签值 (batch, 1, h, w) -> one_hot (batch, 4, h, w)
         """
 
         class_0 = img_pred[:, 0, ...]
@@ -48,70 +49,81 @@ class Evaluate_Metric(nn.Module):
         mask_class_list = [mask_0, mask_1, mask_2, mask_3]
 
         return pre_class_list, mask_class_list
+    def compute_confusion_matrix(self, img_pred, img_mask):
+        """
+        计算 TP FP TN FN
+        """
+        assert img_pred.shape == img_mask.shape
+        tensor_one = torch.tensor(1)
 
-    def Recall(self, img_pred, img_mask, threshold=0.5):
+        # 计算混淆矩阵的元素
+        TP = (img_pred * img_mask).sum(dim=(-2, -1)) # 预测为正类，实际也为正类
+        FN = ((tensor_one - img_pred)*img_mask).sum(dim=(-2, -1)) # 预测为负类，实际为正类
+        FP = (img_pred * (tensor_one - img_mask)).sum(dim=(-2, -1)) # 预测为正类，实际为负类
+        TN = ((tensor_one - img_pred) * (tensor_one - img_mask)).sum(dim=(-2, -1)) # 预测为负类，实际也为负类
+        return TP, FN, FP, TN
+
+    def recall(self, img_pred, img_mask):
         """"
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
         """
         recall_dict = {}
         class_names = self.class_names
+
+        # 预处理
+        img_pred = torch.argmax(img_pred, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
+        img_pred = F.one_hot(img_pred, num_classes=4).permute(0, 3, 1, 2).float() 
+        img_mask = F.one_hot(img_mask, num_classes=4).permute(0, 3, 1, 2).float() 
+    
+
         # 获取类别的预测值和标签
         pred_class_list, mask_class_list = self.split_class(img_pred, img_mask)
+
         for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            # 将预测值转换为二进制数
-            predict_label = (pred_class > threshold).float()
-            # 计算TP、FP、FN
-            TP = torch.sum((predict_label==1)&(mask_class==1))
-            FN = torch.sum((predict_label==0)&(mask_class==1))
-            # 计算召回率
-            try: TP + FN == 0  
-            except ZeroDivisionError:
-                print("ZeroDivisionError:TP + FN == 0")
-                recall = 0.0
+            TP, FN, _, _ = self.compute_confusion_matrix(pred_class, mask_class)
             recall = TP / (TP + FN)
             recall_dict[class_name] = recall
         
         OM_rc = recall_dict['Organic matter'].item()
         OP_rc = recall_dict['Organic pores'].item()
         IOP_rc = recall_dict['Inorganic pores'].item()
-        recall = (OM_rc + OP_rc + IOP_rc) / len(class_names)
+        recall = sum(recall_dict.values() - recall_dict['Background']).item() / (len(class_names) - 1) 
 
         return OM_rc, OP_rc, IOP_rc, recall
 
-    def Precision(self, img_pred, img_mask, threshold=0.5):
+    
+    def precision(self, img_pred, img_mask, threshold=0.5):
         precision_dict = {}
         class_names = self.class_names
+
+        # 预处理
+        img_pred = torch.argmax(img_pred, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
+        img_pred = F.one_hot(img_pred, num_classes=4).permute(0, 3, 1, 2).float() 
+        img_mask = F.one_hot(img_mask, num_classes=4).permute(0, 3, 1, 2).float() 
+
         # 获取类别的预测值和标签
         pred_class_list, mask_class_list = self.split_class(img_pred, img_mask)
         for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            # 将预测值转换为二进制数
-            predict_label = (pred_class > threshold).float()
-            # 计算TP、FP、FN
-            TP = torch.sum((predict_label==1)&(mask_class==1))
-            FP = torch.sum((predict_label==1)&(mask_class==0))
-            # 计算精准率
-            try: TP + FP == 0  
-            except ZeroDivisionError:
-                print("ZeroDivisionError:TP + FP == 0")
-                precision = 0.0
+            TP, _, FP, _ = self.compute_confusion_matrix(pred_class, mask_class)
             precision = TP / (TP + FP)
             precision_dict[class_name] = precision
 
         OM_pc = precision_dict['Organic matter'].item()
         OP_pc = precision_dict['Organic pores'].item()
         IOP_pc = precision_dict['Inorganic pores'].item()
-        precision = (OM_pc + OP_pc + IOP_pc) / len(class_names)
+        precision = sum(precision_dict.values() - precision_dict['Background']).item() / (len(class_names) - 1)
 
         return OM_pc, OP_pc, IOP_pc, precision
 
-    def F1_score(self, img_pred, img_mask): 
+
+    def f1_score(self, img_pred, img_mask): 
         """
         recall:     召回率
         precision:  精准率
         """               
-        OM_rc, OP_rc, IOP_rc, recall = self.Recall(img_pred, img_mask)
-        OM_pc, OP_pc, IOP_pc, precision = self.Precision(img_pred, img_mask)
+        OM_rc, OP_rc, IOP_rc, recall = self.recall(img_pred, img_mask)
+        OM_pc, OP_pc, IOP_pc, precision = self.precision(img_pred, img_mask)
 
         # OM_F1
         if (OM_rc + OM_pc) == 0:
@@ -138,41 +150,47 @@ class Evaluate_Metric(nn.Module):
             F1_score = 2 * (recall * precision) / (recall + precision)
         
         return OM_F1, OP_F1, IOP_F1, F1_score
+    
 
-    def Dice(self, img_pred, img_mask, smooth=1e-5):
+    def dice_coefficient(self, img_pred, img_mask):
         """
         dice 指数
         """
-        smooth = smooth
         dice_dict = {}
         class_names = self.class_names
-        img_pred = torch.argmax(img_pred, dim=1)
-        img_pred = F.one_hot(img_pred, self.num_classes).permute(0, 3, 1, 2).float()
+        # 预处理
+        img_pred = torch.argmax(img_pred, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
+        img_pred = F.one_hot(img_pred, num_classes=4).permute(0, 3, 1, 2).float() 
+        img_mask = F.one_hot(img_mask, num_classes=4).permute(0, 3, 1, 2).float() 
+
         pred_class_list, mask_class_list = self.split_class(img_pred, img_mask)
         # 计算每个类的dice
         for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            intersection = (pred_class * mask_class).sum()
-            union = pred_class.sum() + mask_class.sum()
-            dice = (2 * intersection + smooth) / (union + smooth)
+            intersection = (pred_class * mask_class).sum(dim=(-2,-1))
+            union = pred_class.sum(dim=(-2,-1)) + mask_class.sum(dim=(-2,-1))
+            dice = (2 * intersection ) / union
             dice_dict[class_name] = dice
         
         OM_dice = dice_dict['Organic matter'].item()
         OP_dice = dice_dict['Organic pores'].item()
         IOP_dice = dice_dict['Inorganic pores'].item()
-        dice = (OM_dice + OP_dice + IOP_dice) / len(class_names)
+        dice = sum(dice_dict.values() - dice_dict['Background']).item() / (len(class_names) - 1)
 
         return OM_dice, OP_dice, IOP_dice, dice
+
+      
 
     def update(self, img_pred, img_mask):
         """
         更新评价指标
         """
-        recall = self.Recall(img_pred, img_mask)
-        precision = self.Precision(img_pred, img_mask)
-        dice = self.Dice(img_pred, img_mask)
-        f1_score = self.F1_score(img_pred, img_mask)
+        recall = self.recall(img_pred, img_mask)
+        precision = self.precision(img_pred, img_mask)
+        dice = self.dice_coefficient(img_pred, img_mask)
+        f1_score = self.f1_score(img_pred, img_mask)
 
         metrics = [recall, precision, dice, f1_score]
         metrics = np.stack(metrics, axis=0)
+        metrics = np.nan_to_num(metrics)
 
         return metrics

@@ -5,16 +5,17 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
+import os
 from torch import einsum
 from torch import Tensor
-from scipy.ndimage import distance_transform_edt as distance
 from typing import Any, Callable, Iterable, List, Set, Tuple, TypeVar, Union
 
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 def split_class(img_pred, img_mask):
     """
     img_pred: 预测值 (batch, 4, h, w)
-    img_mask: 标签值 (batch, 4, h, w)
+    img_mask: 标签值 (batch, h, w)
     """
     
     class_0 = img_pred[:, 0, ...]
@@ -58,12 +59,9 @@ class CrossEntropyLoss():
         loss_dict = {}
         num_classes = self.num_classes
         class_names = self.class_names
-        # # 将img_pred转换为one-hot形式
-        # img_pred = img_mask.long()
-        # img_pred = F.one_hot(img_pred, self.num_classes).permute(0, 3, 1, 2).float()
         
         # img_mask: (b, h, w) -> (b, c, h, w)
-        img_mask = img_mask.long()
+        img_mask = img_mask.to(torch.int64)
         img_mask = F.one_hot(img_mask, num_classes).permute(0, 3, 1, 2).float()
         pred_class_list, mask_class_list = split_class(img_pred, img_mask)
 
@@ -75,7 +73,7 @@ class CrossEntropyLoss():
         OM_loss = loss_dict['Organic matter']
         OP_loss = loss_dict['Organic pores']
         IOP_loss = loss_dict['Inorganic pores']
-        mean_loss = (sum(loss_dict.values()) - loss_dict['Background']) / len(loss_dict)
+        mean_loss = sum(loss_dict.values()) / len(loss_dict)
         
         return OM_loss, OP_loss, IOP_loss, mean_loss
     
@@ -110,8 +108,8 @@ class DiceLoss():
         tensor_one = torch.tensor(1)
 
         # img_mask: (b, h, w) -> (b, c, h, w)
-        img_mask = img_mask.long()
-        img_mask = F.one_hot(img_mask, num_classes).permute(0, 3, 1, 2).float()  
+        img_mask = img_mask.to(torch.int64)
+        img_mask = F.one_hot(img_mask, num_classes + 1).permute(0, 3, 1, 2).float()  
         pred_class_list, mask_class_list = split_class(img_pred, img_mask)
 
         # 遍历计算每个类别的损失
@@ -162,164 +160,41 @@ class Focal_Loss():
         crossentropy = nn.CrossEntropyLoss()
 
         # img_mask: (b, h, w) -> (b, c, h, w)
-        img_mask = img_mask.long()
-        img_mask = F.one_hot(img_mask, num_classes).permute(0, 3, 1, 2).float()
+        img_mask = img_mask.to(torch.int64)
+        img_mask = img_mask.squeeze(1)
+        img_mask = F.one_hot(img_mask, num_classes + 1).permute(0, 3, 1, 2).float()
         pred_class_list, mask_class_list = split_class(img_pred, img_mask)
 
         # 遍历计算每个类别的损失
         for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
             ce_loss = crossentropy(pred_class, mask_class)
             pt = torch.exp(-ce_loss)
-            focal_loss = -self.alpha * ((1-pt)**self.gamma) * ce_loss
+            focal_loss = self.alpha * ((1-pt)**self.gamma) * ce_loss
             loss_dict[class_name] = focal_loss
 
         # 损失值    
         OM_loss = loss_dict['Organic matter']
         OP_loss = loss_dict['Organic pores']
         IOP_loss = loss_dict['Inorganic pores']
-        mean_loss = (sum(loss_dict.values()) - loss_dict['Background']) / len(loss_dict)
+        mean_loss = sum(loss_dict.values()) / len(loss_dict)
 
         return OM_loss, OP_loss, IOP_loss, mean_loss
+
             
 """
-boundary loss
+boundary loss   # TODO: 待实验
 
 """
-# switch between representations
-def probs2class(probs: torch.torch.Tensor) -> torch.Tensor:
-    b, _, w, h = probs.shape  # type: Tuple[int, int, int, int]
-    assert simplex(probs)
- 
-    res = probs.argmax(dim=1)
-    assert res.shape == (b, w, h)
- 
-    return res 
- 
- 
-def probs2one_hot(probs: torch.Tensor) -> torch.Tensor:
-    _, C, _, _ = probs.shape
-    assert simplex(probs)
- 
-    res = class2one_hot(probs2class(probs), C)
-    assert res.shape == probs.shape
-    assert one_hot(res)
- 
-    return res
- 
- 
-def class2one_hot(seg: torch.Tensor, C: int) -> torch.Tensor:
-    if len(seg.shape) == 2:  # Only w, h, used by the dataloader
-        seg = seg.unsqueeze(dim=0)
-    assert sset(seg, list(range(C)))
- 
-    b, w, h = seg.shape  # type: Tuple[int, int, int]
- 
-    res = torch.stack([seg == c for c in range(C)], dim=1).type(torch.int32)
-    assert res.shape == (b, C, w, h)
-    assert one_hot(res)
- 
-    return res
- 
- 
-def one_hot2dist(seg: np.ndarray) -> np.ndarray:
-    assert one_hot(torch.torch.Tensor(seg), axis=0)
-    C: int = len(seg)
- 
-    res = np.zeros_like(seg)
-    # res = res.astype(np.float64)
-    for c in range(C):
-        posmask = seg[c].astype(np.bool)
- 
-        if posmask.any():
-            negmask = ~posmask
-            res[c] = distance(negmask) * negmask - (distance(posmask) - 1) * posmask
-    return res
- 
- 
-def simplex(t: torch.Tensor, axis=1) -> bool:
-    _sum = t.sum(axis).type(torch.float32)
-    _ones = torch.ones_like(_sum, dtype=torch.float32)
-    return torch.allclose(_sum, _ones)
- 
- 
-def one_hot(t: torch.Tensor, axis=1) -> bool:
-    return simplex(t, axis) and sset(t, [0, 1])
- 
-    # Assert utils
- 
- 
-def uniq(a: torch.Tensor) -> Set:
-    return set(torch.unique(a.cpu()).numpy())
- 
- 
-def sset(a: torch.Tensor, sub: Iterable) -> bool:
-    return uniq(a).issubset(sub)
- 
- 
-class SurfaceLoss():
-    def __init__(self):
-        # Self.idc is used to filter out some classes of the target mask. Use fancy indexing
-        self.idc: List[int] = [1]  # 这里忽略背景类  https://github.com/LIVIAETS/surface-loss/issues/3
- 
-    # probs: bcwh, dist_maps: bcwh
-    def __call__(self, probs: torch.Tensor, dist_maps: torch.Tensor) -> torch.Tensor:
-            assert simplex(probs), "The probabilities do not form a simplex."
-            assert not one_hot(dist_maps)
+
+
+
+"""
+基于距离的损失函数,计算预测分割与真实分割之间的平均表面距离。  # TODO: 待实验
+
+参数:
+    reduction (str): 指定损失的缩减方式,'mean' 或 'sum'。
+"""
     
-            pc = probs[:, self.idc, ...].type(torch.float32)
-            dc = dist_maps[:, self.idc, ...].type(torch.float32)
-    
-            multiplied = einsum("bchw,bchw->bchw", pc, dc)  # 修改方程字符串以匹配操作数的维度
-    
-            loss = multiplied.mean()
-    
-            return loss
-
-class DistanceBasedLoss(nn.Module):
-    """
-    基于距离的损失函数,计算预测分割与真实分割之间的平均表面距离。
-
-    参数:
-        reduction (str): 指定损失的缩减方式,'mean' 或 'sum'。
-    """
-    def __init__(self, reduction='mean'):
-        super(DistanceBasedLoss, self).__init__()
-        self.reduction = reduction
-
-    def forward(self, pred, target):
-        """
-        计算基于距离的损失。
-
-        参数:
-            pred (torch.Tensor): 模型输出的预测分割图,期望形状为 (N, 1, H, W)。
-            target (torch.Tensor): 真实分割图,形状为 (N, 1, H, W) 或 (N, H, W)。
-
-        返回:
-            torch.Tensor: 基于距离的损失值。
-        """
-        # 确保维度一致
-        if target.dim() == 2:
-            target = target.unsqueeze(1)
-        
-        # 计算预测分割与真实分割之间的差异
-        diff = torch.abs(pred - target)
-
-        # 计算边界像素的索引
-        border = target ^ (target > 0).all(dim=1, keepdim=True)  # 找到边界
-        diff_border = diff * border.float()
-
-        # 计算表面距离
-        distances = F.avg_pool2d(diff_border, kernel_size=3, stride=1, padding=1)
-
-        # 根据缩减方式处理损失
-        if self.reduction == 'mean':
-            loss = distances.mean()
-        elif self.reduction == 'sum':
-            loss = distances.sum()
-        else:
-            raise ValueError("Invalid reduction mode: '{}'".format(self.reduction))
-
-        return loss
 
 class TotalLoss(nn.Module):
     """
@@ -329,9 +204,9 @@ class TotalLoss(nn.Module):
         super().__init__()
         self.flag = flag
         self.dice_loss = DiceLoss()
-        self.boundary_loss = SurfaceLoss()
+        # self.boundary_loss = SurfaceLoss()
         self.focal_loss = Focal_Loss()
-        self.distance_based_loss = DistanceBasedLoss()  # 修改命名风格
+        # self.distance_based_loss = DistanceBasedLoss()  # 修改命名风格
         
         # 校验 loss_fn 参数的有效性
         if loss_fn is not None and loss_fn not in ['dice_loss', 'boundary_loss', 'focal_loss', 'distance_based_loss']:
