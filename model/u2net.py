@@ -137,8 +137,8 @@ class U2net(nn.Module):
 
         self.decode_modules = nn.ModuleList(decode_list)
         self.side_list = nn.ModuleList(side_list)
-        self.out_conv = nn.Conv2d(self.encode_num*out_ch, out_ch, kernel_size=1)
-    
+        self.out_conv = nn.Conv2d(self.encode_num*out_ch, out_ch, kernel_size=1)       
+            
     def forward(self, x:torch.Tensor):
         _, _, h, w = x.shape
         # 记录编码器输出
@@ -226,7 +226,17 @@ if __name__ == '__main__':
 #
 # n_m = RSU4F(in_ch=3, mid_ch=12, out_ch=3)
 # convert_onnx(n_m, "RSU4F.onnx")
-
-    u2net = u2net_full_config()
+    x = torch.randn(1, 3, 320, 320)
+    model = u2net_full_config()
+    
+    # 训练
+    model.train()
+    output = model(x)
+    print(output[0].shape)
+    
+    # 推理
+    model.eval()
+    outputs = model(x)
+    print(outputs.shape)
     
     # convert_onnx(u2net, "u2net_full_config.onnx")

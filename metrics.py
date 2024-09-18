@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 
 class Evaluate_Metric(nn.Module):
-    def __init__(self):
+    def __init__(self, smooth=1e-5):
         super(Evaluate_Metric, self).__init__()
         self.class_names = [
                             'Background',   
@@ -28,39 +28,24 @@ class Evaluate_Metric(nn.Module):
             'Organic pores':2,
             'Inorganic pores':3
         }
-        self.num_classes = len(self.labels)
-
-    def split_class(self, img_pred, img_mask):
+        self.smooth = smooth
+        
+    def compute_confusion_matrix(self, img_pred, img_mask, threshold=0.5):
         """
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, 1, h, w) -> one_hot (batch, 4, h, w)
         """
-
-        class_0 = img_pred[:, 0, ...]
-        class_1 = img_pred[:, 1, ...]
-        class_2 = img_pred[:, 2, ...]
-        class_3 = img_pred[:, 3, ...]
-        pre_class_list = [class_0, class_1, class_2, class_3]  # 舍弃背景类
-
-        mask_0 = img_mask[:, 0, ...]
-        mask_1 = img_mask[:, 1, ...]
-        mask_2 = img_mask[:, 2, ...]
-        mask_3 = img_mask[:, 3, ...]
-        mask_class_list = [mask_0, mask_1, mask_2, mask_3]
-
-        return pre_class_list, mask_class_list
-    def compute_confusion_matrix(self, img_pred, img_mask):
-        """
-        计算 TP FP TN FN
-        """
-        assert img_pred.shape == img_mask.shape
-        tensor_one = torch.tensor(1)
+        
+        # 将预测概率转换为二进制值
+        img_pred_binary = (img_pred > threshold).to(torch.int64)
+        img_mask = img_mask.to(torch.int64)
 
         # 计算混淆矩阵的元素
-        TP = (img_pred * img_mask).sum(dim=(-2, -1)) # 预测为正类，实际也为正类
-        FN = ((tensor_one - img_pred)*img_mask).sum(dim=(-2, -1)) # 预测为负类，实际为正类
-        FP = (img_pred * (tensor_one - img_mask)).sum(dim=(-2, -1)) # 预测为正类，实际为负类
-        TN = ((tensor_one - img_pred) * (tensor_one - img_mask)).sum(dim=(-2, -1)) # 预测为负类，实际也为负类
+        TP = ((img_pred_binary & img_mask) == 1).sum(dim=(-2, -1))
+        FN = ((~img_pred_binary & img_mask) == 1).sum(dim=(-2, -1))
+        FP = ((img_pred_binary & ~img_mask) == 1).sum(dim=(-2, -1))
+        TN = ((~img_pred_binary & ~img_mask) == 1).sum(dim=(-2, -1))
+
         return TP, FN, FP, TN
 
     def recall(self, img_pred, img_mask):
@@ -68,52 +53,48 @@ class Evaluate_Metric(nn.Module):
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
         """
-        recall_dict = {}
-        class_names = self.class_names
+        # recall_dict = {}
+        # class_names = self.class_names
 
         # 预处理
         img_pred = torch.argmax(img_pred, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
         img_pred = F.one_hot(img_pred, num_classes=4).permute(0, 3, 1, 2).float() 
         img_mask = F.one_hot(img_mask, num_classes=4).permute(0, 3, 1, 2).float() 
-    
 
-        # 获取类别的预测值和标签
-        pred_class_list, mask_class_list = self.split_class(img_pred, img_mask)
-
-        for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            TP, FN, _, _ = self.compute_confusion_matrix(pred_class, mask_class)
-            recall = TP / (TP + FN)
-            recall_dict[class_name] = recall
+        # 计算总体召回率
+        TP, FN, _, _ = self.compute_confusion_matrix(img_pred, img_mask)
+        recall = TP / (TP + FN + self.smooth)
+        recall = recall.sum(dim=0) / 4
         
-        OM_rc = recall_dict['Organic matter'].item()
-        OP_rc = recall_dict['Organic pores'].item()
-        IOP_rc = recall_dict['Inorganic pores'].item()
-        recall = sum(recall_dict.values() - recall_dict['Background']).item() / (len(class_names) - 1) 
-
+        OM_rc = recall[1].item()
+        OP_rc = recall[2].item()
+        IOP_rc = recall[3].item()
+        recall = recall.sum() / 4
+        recall = recall.item()
+        
         return OM_rc, OP_rc, IOP_rc, recall
 
     
     def precision(self, img_pred, img_mask, threshold=0.5):
-        precision_dict = {}
-        class_names = self.class_names
+        # precision_dict = {}
+        # class_names = self.class_names
 
         # 预处理
         img_pred = torch.argmax(img_pred, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
         img_pred = F.one_hot(img_pred, num_classes=4).permute(0, 3, 1, 2).float() 
         img_mask = F.one_hot(img_mask, num_classes=4).permute(0, 3, 1, 2).float() 
-
-        # 获取类别的预测值和标签
-        pred_class_list, mask_class_list = self.split_class(img_pred, img_mask)
-        for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            TP, _, FP, _ = self.compute_confusion_matrix(pred_class, mask_class)
-            precision = TP / (TP + FP)
-            precision_dict[class_name] = precision
-
-        OM_pc = precision_dict['Organic matter'].item()
-        OP_pc = precision_dict['Organic pores'].item()
-        IOP_pc = precision_dict['Inorganic pores'].item()
-        precision = sum(precision_dict.values() - precision_dict['Background']).item() / (len(class_names) - 1)
-
+        
+        # 计算总体精准率
+        TP, _, FP, _ = self.compute_confusion_matrix(img_pred, img_mask)
+        precision = TP / (TP + FP + self.smooth)
+        precision = precision.sum(dim=0) / 4
+        
+        OM_pc = precision[1].item()
+        OP_pc = precision[2].item()
+        IOP_pc = precision[3].item()
+        precision = precision.sum() / 4
+        precision = precision.item()
+        
         return OM_pc, OP_pc, IOP_pc, precision
 
 
@@ -126,55 +107,42 @@ class Evaluate_Metric(nn.Module):
         OM_pc, OP_pc, IOP_pc, precision = self.precision(img_pred, img_mask)
 
         # OM_F1
-        if (OM_rc + OM_pc) == 0:
-            OM_F1 = 0.0
-        else:
-            OM_F1 = 2 * (OM_rc * OM_pc) / (OM_rc + OM_pc)
+        OM_F1 = 2 * (OM_rc * OM_pc) / (OM_rc + OM_pc + self.smooth)
 
         # OP_F1
-        if (OP_rc + OP_pc) == 0:
-            OP_F1 = 0.0
-        else:
-            OP_F1 = 2 * (OP_rc * OP_pc) / (OP_rc + OP_pc)
+        OP_F1 = 2 * (OP_rc * OP_pc) / (OP_rc + OP_pc + self.smooth)
 
         # IOP_F1
-        if (IOP_rc + IOP_pc) == 0:
-            IOP_F1 = 0.0
-        else:
-            IOP_F1 = 2 * (IOP_rc * IOP_pc) / (IOP_rc + IOP_pc)
+        IOP_F1 = 2 * (IOP_rc * IOP_pc) / (IOP_rc + IOP_pc + self.smooth)
 
         # F1_score
-        if (recall + precision) == 0:
-            F1_score = 0.0
-        else:
-            F1_score = 2 * (recall * precision) / (recall + precision)
+        F1_score = 2 * (recall * precision) / (recall + precision + self.smooth)
         
         return OM_F1, OP_F1, IOP_F1, F1_score
     
 
-    def dice_coefficient(self, img_pred, img_mask):
+    def dice_coefficient(self, logits, targets):
         """
         dice 指数
         """
-        dice_dict = {}
-        class_names = self.class_names
+        num_classes = logits.shape[1]
         # 预处理
-        img_pred = torch.argmax(img_pred, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
-        img_pred = F.one_hot(img_pred, num_classes=4).permute(0, 3, 1, 2).float() 
-        img_mask = F.one_hot(img_mask, num_classes=4).permute(0, 3, 1, 2).float() 
-
-        pred_class_list, mask_class_list = self.split_class(img_pred, img_mask)
-        # 计算每个类的dice
-        for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            intersection = (pred_class * mask_class).sum(dim=(-2,-1))
-            union = pred_class.sum(dim=(-2,-1)) + mask_class.sum(dim=(-2,-1))
-            dice = (2 * intersection ) / union
-            dice_dict[class_name] = dice
+        logits = torch.argmax(logits, dim=1)
+        logits = F.one_hot(logits, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        # targets: (b, h, w) -> (b, c, h, w)
+        targets = targets.to(torch.int64)
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float() 
         
-        OM_dice = dice_dict['Organic matter'].item()
-        OP_dice = dice_dict['Organic pores'].item()
-        IOP_dice = dice_dict['Inorganic pores'].item()
-        dice = sum(dice_dict.values() - dice_dict['Background']).item() / (len(class_names) - 1)
+        # 计算总体dice
+        intersection = (logits * targets).sum(dim=(0,-2,-1))
+        union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
+        dice = (2 * intersection) / (union + self.smooth)
+        
+        OM_dice = dice[1].item()
+        OP_dice = dice[2].item()
+        IOP_dice = dice[3].item()
+        dice = dice.mean()
+        dice = dice.item()
 
         return OM_dice, OP_dice, IOP_dice, dice
 

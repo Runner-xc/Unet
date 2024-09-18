@@ -13,28 +13,33 @@ def total_loss(model_output, target, loss_fn):
     loss_fn: 损失函数
     """
     # 获取总的损失 TODO: 使用字典存储损失
-    loss_list = [loss_fn(torch.softmax(model_output[i], dim=1), target) for i in range(len(model_output))]  
-    mean_loss_list = []
-    OM_loss_list = []
-    OP_loss_list = []
-    IOP_loss_list = []
+    loss_dict_list = [loss_fn(F.softmax(model_output[i], dim=1), target) for i in range(len(model_output))]
+
+    total_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
+    OM_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
+    OP_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
+    IOP_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
 
     # 遍历每一层损失
-    for loss in loss_list: 
-        OM_loss, OP_loss, IOP_loss, mean_loss = loss   # 使用 *rest 来捕获额外的损失
+    for loss_dict in loss_dict_list: 
+        # OM_loss = loss_dict['Organic matter']   # list:[8]
+        # OP_loss = loss_dict['Organic pores']
+        # IOP_loss = loss_dict['Inorganic pores']
+        total_loss = loss_dict['total_loss']
         
-        mean_loss_list.append(mean_loss)
-        OM_loss_list.append(OM_loss)
-        OP_loss_list.append(OP_loss)
-        IOP_loss_list.append(IOP_loss)
+        # 累加损失
+        total_losses += total_loss
+        # OM_losses += OM_loss
+        # OP_losses += OP_loss
+        # IOP_losses += IOP_loss
     
-    # 计算平均损失
-    train_loss = sum(mean_loss_list) / len(mean_loss_list)
-    OM_loss = sum(OM_loss_list) / len(OM_loss_list)
-    OP_loss = sum(OP_loss_list) / len(OM_loss_list)
-    IOP_loss = sum(IOP_loss_list) / len(OM_loss_list)
+    # 计算 7层 平均损失
+    total_loss =  total_losses / len(loss_dict_list)
+    # OM_loss = OM_losses / len(loss_dict_list)
+    # OP_loss = OP_losses / len(loss_dict_list) 
+    # IOP_loss = IOP_losses / len(loss_dict_list) 
 
-    return OM_loss, OP_loss, IOP_loss, train_loss
+    return total_loss
   
 
 def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler):
@@ -70,7 +75,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
             # 训练 + 计算loss
             # pred_masks：list:(7, pred_mask)
             pred_masks = model(images)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
-            OM_loss, OP_loss, IOP_loss, train_mean_loss = total_loss(pred_masks, masks, loss_fn)
+            train_mean_loss = total_loss(pred_masks, masks, loss_fn)
            
 
         # 反向传播
@@ -86,17 +91,13 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
         
         # 更新梯度缩放器
         scaler.update()
-        
-        # 更新进度条显示
-        train_dataloader.set_postfix({"Loss": f"{train_mean_loss.item():.4f}"})
-        train_dataloader.update()
 
         epoch_train_loss += train_mean_loss.item()
-        epoch_OM_loss += OM_loss.item()
-        epoch_OP_loss += OP_loss.item()
-        epoch_IOP_loss += IOP_loss.item()
+        # epoch_OM_loss += OM_loss.item()
+        # epoch_OP_loss += OP_loss.item()
+        # epoch_IOP_loss += IOP_loss.item()
         
-    return epoch_OM_loss, epoch_OP_loss, epoch_IOP_loss, epoch_train_loss / len(train_dataloader)
+    return epoch_train_loss
 
 def evaluate(model, device, data_loader, loss_fn, Metric):
     """
@@ -119,8 +120,8 @@ def evaluate(model, device, data_loader, loss_fn, Metric):
         for data in val_dataloader:
             images, masks =data[0].to(device), data[1].to(device)
             with autocast(device_type="cuda"):
-                pred_mask = model(images)         # 验证 模型输出 softmax 输出
-                OM_loss, OP_loss, IOP_loss, mean_loss = loss_fn(pred_mask, masks)
+                pred_mask = model(images)         # 验证  模型 softmax 输出
+                loss_dict = loss_fn(pred_mask, masks)
            
                 masks = masks.to(torch.int64)
                 masks = masks.squeeze(1)
@@ -128,12 +129,12 @@ def evaluate(model, device, data_loader, loss_fn, Metric):
                 Metric_list += metrics    
 
             # 累加损失   # TODO : 2
-            val_mean_loss += mean_loss.item()
-            val_OM_loss += OM_loss.item()
-            val_OP_loss += OP_loss.item()
-            val_IOP_loss += IOP_loss.item()
+            val_mean_loss += loss_dict['total_loss'].sum().item()
+            # val_OM_loss += loss_dict['Organic matter'].sum().item()
+            # val_OP_loss += loss_dict['Organic pores'].sum().item()
+            # val_IOP_loss += loss_dict['Inorganic pores'].sum().item()
     
     Metric_list /= len(val_dataloader)
 
     # TODO : 3
-    return val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss, Metric_list
+    return val_mean_loss, Metric_list

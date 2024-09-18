@@ -97,16 +97,23 @@ def main(args):
     #                 transforms.Resize((320, 320)),
     #                 transforms.RandomHorizontalFlip(p=0.5)])
     
+    # 加载数据集
+    if args.small_data is not None:
+        train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
+                                                                                                    num_small_data=args.small_data, 
+                                                                                                    # train_ratio=0.8, 
+                                                                                                    # val_ratio=0.1, 
+                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV') 
     
-    
-    train_datasets, val_datasets, train_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio, val_ratio,
+    else:
+        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio, val_ratio,
                             save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV')# 保存划分好的数据集路径
     # 读取数据集
     train_datasets = SEM_DATA(train_datasets, 
-                              transforms=SODPresetTrain([320, 320], crop_size=320))
+                            transforms=SODPresetTrain((320, 320), crop_size=320))
     
     val_datasets = SEM_DATA(val_datasets, 
-                            transforms=SODPresetEval([320, 320]))
+                            transforms=SODPresetEval((320, 320)))
     
     num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
     train_dataloader = DataLoader(train_datasets, 
@@ -116,7 +123,7 @@ def main(args):
                                 pin_memory=True)
     
     val_dataloader = DataLoader(val_datasets, 
-                                batch_size=1, 
+                                batch_size=4, 
                                 shuffle=False, 
                                 num_workers=num_workers,
                                 pin_memory=True)
@@ -154,7 +161,7 @@ def main(args):
     elif args.loss_fn == 'FocalLoss':
         loss_fn = Focal_Loss()
     else:
-        raise ValueError("loss function must be 'CrossEntropy', 'FocalLoss', 'DiceLoss'.")
+        raise ValueError("loss function must be 'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
     # 缩放器
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
     Metrics = Evaluate_Metric()
@@ -172,13 +179,13 @@ def main(args):
         # 记录时间
         start_time = time.time()
         # 训练
-        epoch_train_loss, epoch_OM_loss, epoch_OP_loss, epoch_IOP_loss = train_one_epoch(model, 
-                                                                                        optimizer, 
-                                                                                        epoch, 
-                                                                                        train_dataloader, 
-                                                                                        device=device, 
-                                                                                        loss_fn=loss_fn, 
-                                                                                        scaler=scaler) # loss
+        total_loss = train_one_epoch(model, 
+                                                                optimizer, 
+                                                                epoch, 
+                                                                train_dataloader, 
+                                                                device=device, 
+                                                                loss_fn=loss_fn, 
+                                                                scaler=scaler) # loss
 
         
         save_file = {"model": model.state_dict(),
@@ -187,17 +194,18 @@ def main(args):
                      "epoch": epoch,
                      "args": args}
         # 求平均
-        train_OM_loss = epoch_OM_loss / len(train_dataloader)
-        train_OP_loss = epoch_OP_loss / len(train_dataloader)
-        train_IOP_loss = epoch_IOP_loss / len(train_dataloader)
-        train_mean_loss = epoch_train_loss / len(train_dataloader)
+        # train_OM_loss = OM_loss / len(train_dataloader)
+        # train_OP_loss = OP_loss / len(train_dataloader)
+        # train_IOP_loss = IOP_loss / len(train_dataloader)
+        train_mean_loss = total_loss / len(train_dataloader)
 
         # 记录日志
         writer.add_scalars('train/Loss', 
                            {'Mean':train_mean_loss, 
-                             'OM': train_OM_loss, 
-                             'OP': train_OP_loss, 
-                             'IOP': train_IOP_loss},
+                            #  'OM': train_OM_loss, 
+                            #  'OP': train_OP_loss, 
+                            #  'IOP': train_IOP_loss
+                            },
                            epoch)
 
         # 结束时间
@@ -207,9 +215,9 @@ def main(args):
         # 打印
 
         print(f"[epoch: {epoch}]\n"
-              f"train_OM_loss: {train_OM_loss:.3f}\n"
-              f"train_OP_loss: {train_OP_loss:.3f}\n"
-              f"train_IOP_loss: {train_IOP_loss:.3f}\n"
+            #   f"train_OM_loss: {train_OM_loss:.3f}\n"
+            #   f"train_OP_loss: {train_OP_loss:.3f}\n"
+            #   f"train_IOP_loss: {train_IOP_loss:.3f}\n"
               f"train_mean_loss: {train_mean_loss:.3f}\n"
               f"train_cost_time: {train_cost_time:.2f}s")
         
@@ -220,12 +228,12 @@ def main(args):
             # 记录验证开始时间
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
-            val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss, Metric_list= evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
+            val_mean_loss, Metric_list = evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
 
             # 求平均
-            val_OM_loss = val_OM_loss / len(val_dataloader)
-            val_OP_loss = val_OP_loss / len(val_dataloader)
-            val_IOP_loss = val_IOP_loss / len(val_dataloader)
+            # val_OM_loss = val_OM_loss / len(val_dataloader)
+            # val_OP_loss = val_OP_loss / len(val_dataloader)
+            # val_IOP_loss = val_IOP_loss / len(val_dataloader)
             val_mean_loss = val_mean_loss / len(val_dataloader)
 
             # 评价指标 metrics = [recall, precision, dice, f1_score]
@@ -242,9 +250,9 @@ def main(args):
 
             # 打印结果
             print(f"[epoch: {epoch}]\n"
-                  f"val_OM_loss: {val_OM_loss:.3f}\n"
-                  f"val_OP_loss: {val_OP_loss:.3f}\n"
-                  f"val_IOP_loss: {val_IOP_loss:.3f}\n"
+                #   f"val_OM_loss: {val_OM_loss:.3f}\n"
+                #   f"val_OP_loss: {val_OP_loss:.3f}\n"
+                #   f"val_IOP_loss: {val_IOP_loss:.3f}\n"
                   f"val_mean_loss: {val_mean_loss:.3f}\n"
                   f"val_cost_time: {val_cost_time:.2f}s")
             
@@ -252,37 +260,23 @@ def main(args):
             tb = args.tb
             if tb:
                 writer.add_scalars('val/Loss', 
-                                {'Mean':val_mean_loss, 
-                                    'OM': val_OM_loss, 
-                                    'OP': val_OP_loss, 
-                                    'IOP': val_IOP_loss},
+                                {'Mean':val_mean_loss},
                                 epoch)
                 
                 writer.add_scalars('val/Dice',
-                                {'Mean':val_metrics['Dice'][0],
-                                    'OM': val_metrics['Dice'][1],
-                                    'OP': val_metrics['Dice'][2],
-                                    'IOP': val_metrics['Dice'][3]},
+                                {'Mean':val_metrics['Dice'][3],
+                                },
                                 epoch)
                 
                 writer.add_scalars('val/Precision', 
-                                {'Mean':val_metrics['Precision'][0],
-                                    'OM': val_metrics['Precision'][1], 
-                                    'OP': val_metrics['Precision'][2], 
-                                    'IOP': val_metrics['Precision'][3]},
+                                {'Mean':val_metrics['Precision'][3]},
                                 epoch)
                 
                 writer.add_scalars('val/Recall', 
-                                {'Mean':val_metrics['Recall'][0], 
-                                    'OM': val_metrics['Recall'][1], 
-                                    'OP': val_metrics['Recall'][2], 
-                                    'IOP': val_metrics['Recall'][3]},
+                                {'Mean':val_metrics['Recall'][3]},
                                 epoch)
                 writer.add_scalars('val/F1', 
-                                {'Mean':val_metrics['F1_scores'][0], 
-                                    'OM': val_metrics['F1_scores'][1], 
-                                    'OP': val_metrics['F1_scores'][2], 
-                                    'IOP': val_metrics['F1_scores'][3]},
+                                {'Mean':val_metrics['F1_scores'][3]},
                                 epoch) 
                 # writer.add_scalars('val/F2', 
                 #                 {'Mean':val_metrics['F2_scores'][0], 
@@ -307,17 +301,18 @@ def main(args):
             
             
             # 保存指标
-            metrics_table_header = ['Metrics_Name', 'OM', 'OP', 'IOP', 'Mean']
+            metrics_table_header = ['Metrics_Name', 'Mean']
             metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores']
             epoch_s = f" 👉 epoch :{epoch} 👈\n"
             time_s = f" 👉 time :{datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} 👈\n"
             cost_s = f" 👉 cost_time :{val_cost_time / 60:.2f}mins 👈\n"
             metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
             metrics_table = [[metric_name,
-                              metrics_dict[metric_name][0],
-                              metrics_dict[metric_name][1],
-                              metrics_dict[metric_name][2],
-                              metrics_dict[metric_name][3]]
+                              metrics_dict[metric_name][3],
+                            #   metrics_dict[metric_name][0],
+                            #   metrics_dict[metric_name][1],
+                            #   metrics_dict[metric_name][2]
+                            ]
                              for metric_name in metrics_table_left
                             ]
             table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
@@ -362,9 +357,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--data_path', type=str, default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_320.csv", help="path to csv dataset")
     
-    parser.add_argument('--model', type=str, default="u2net_full", help="model name")
-    parser.add_argument('--loss_fn', type=str, default='FocalLoss', help='loss function')
-    parser.add_argument('--optimizer', type=str, default='RMSprop')
+    parser.add_argument('--model', type=str, default="u2net_full", help="'u2net_full' 、 'u2net_lite'")
+    parser.add_argument('--loss_fn', type=str, default='CrossEntropyLoss', help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
+    parser.add_argument('--optimizer', type=str, default='AdamW', help="'AdamW', 'SGD' or 'RMSprop'.")
     parser.add_argument('--save_scores_path', type=str, default='results/save_scores', help="root path to save scores on training and valing")
     parser.add_argument('--log_name', type=str, default='u2net')
     parser.add_argument('--device', type=str, default='cuda:0')
@@ -375,10 +370,11 @@ if __name__ == '__main__':
     parser.add_argument('--val_ratio', type=float, default=0.1)
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
-    parser.add_argument('--end_epoch', type=int, default=200, help='ending epoch')
+    parser.add_argument('--end_epoch', type=int, default=150, help='ending epoch')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--wd', type=float, default=0.001, help='weight decay')
+    parser.add_argument('--wd', type=float, default=1e-5, help='weight decay')
     parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
+    parser.add_argument('--small_data', type=int, default=None, help='number of small data')
   
 
     args = parser.parse_args()

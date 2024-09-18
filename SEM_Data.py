@@ -33,13 +33,16 @@ def save_sem_paths_to_csv(root_path, csv_path, csv_name) -> pd.DataFrame:
                     mask_path = os.path.join(dir_path, mask_file)
                     path_dict['mask'].append(mask_path)
     
+    # 确保图片和mask对应                
+    assert [path_dict['img'][i][:-4] == path_dict['mask'][i][:-4] for i in range(len(path_dict['img']))], "The image and mask paths do not match."
+    
     # 保存DataFrame到CSV文件
     df = pd.DataFrame(path_dict)
-    # 确保csv_path目录存在
     if not os.path.isdir(csv_path):
         os.makedirs(csv_path)
     csv_file_path = f"{csv_path}/{csv_name}"
     df.to_csv(csv_file_path, index=False)
+    
     return df
 
 class SEM_DATA(Dataset):
@@ -65,14 +68,14 @@ class SEM_DATA(Dataset):
         assert os.path.exists(mask_path), f"The mask path '{mask_path}' does not exist."
         
         # 读取数据 
-        # img = Image.open(img_path)
-        # mask = Image.open(mask_path)
-        # img_array = np.array(img)
-        # mask_array = np.array(mask)
+        img = Image.open(img_path)
+        mask = Image.open(mask_path).convert('L')   # 将mask转换为灰度图像, 不然会多一个维度
+        img_array = np.array(img)
+        mask_array = np.array(mask)
         
-        img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        # img = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
     
         # 转为tensor 不能使用ToTensor(),  
         # 1.变成3通道 
@@ -81,7 +84,7 @@ class SEM_DATA(Dataset):
         # mask_tensor = torch.tensor(mask_array)
 
         if self.transforms is not None:
-            data = self.transforms(img, mask)
+            data = self.transforms(img_array, mask_array)
 
         return data
 

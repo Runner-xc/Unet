@@ -12,32 +12,12 @@ from typing import Any, Callable, Iterable, List, Set, Tuple, TypeVar, Union
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
-def split_class(img_pred, img_mask):
-    """
-    img_pred: 预测值 (batch, 4, h, w)
-    img_mask: 标签值 (batch, h, w)
-    """
-    
-    class_0 = img_pred[:, 0, ...]
-    class_1 = img_pred[:, 1, ...]
-    class_2 = img_pred[:, 2, ...]
-    class_3 = img_pred[:, 3, ...]
-    pre_class_list = [class_0, class_1, class_2, class_3]
-
-    # 确保img_mask是长整型张量
-    mask_0 = img_mask[:, 0, ...]
-    mask_1 = img_mask[:, 1, ...]
-    mask_2 = img_mask[:, 2, ...]
-    mask_3 = img_mask[:, 3, ...]
-    mask_class_list = [mask_0, mask_1, mask_2, mask_3]
-
-    return pre_class_list, mask_class_list
 
 """
 Cross Entropy Loss
 """
 class CrossEntropyLoss():
-    def __init__(self, **kwargs):
+    def __init__(self):
         self.class_names = [
                             'Background',
                             'Organic matter', 
@@ -49,33 +29,42 @@ class CrossEntropyLoss():
             'Organic pores':2,
             'Inorganic pores':3
         }
-        self.num_classes = len(self.class_names)
 
-    def __call__(self, img_pred: Tensor, img_mask: Tensor) -> Tensor:
+    def __call__(self, logits: Tensor, targets: Tensor) -> Tensor:
         """
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
         """
+        num_classes = logits.shape[1]
+        
+        # 计算loss
+        target = targets
+        targets = targets.to(torch.int64)
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        ce = nn.CrossEntropyLoss(label_smoothing=1e-7, reduction='none')    # 不进行缩减会返回（batch, h, w）的loss值
+       
+        # celoss期望的logits是(b, c, h, w), targets是(b, h, w)
+        loss = ce(logits, targets)   # [8, 320, 320]
+        total_loss = loss.mean()
+        
+        # # 初始化一个数组来存储每个类别的损失
+        # class_losses = torch.zeros(num_classes)
+
+        # # 计算每个类别的平均损失
+        # for i in range(num_classes):
+        #     mask = (target == i)  # 创建一个 mask，其中类别 i 的位置为 True
+        #     class_loss = loss[mask]  # 选择该类别的损失
+        #     class_losses[i] = class_loss.mean()  # 计算该类别的平均损失
+
+        # 记录每个类别的损失
         loss_dict = {}
-        num_classes = self.num_classes
-        class_names = self.class_names
+        loss_dict['total_loss'] = total_loss
+        # loss_dict['Background'] = class_losses[0]
+        # loss_dict['Organic matter'] = class_losses[1]
+        # loss_dict['Organic pores'] = class_losses[2]
+        # loss_dict['Inorganic pores'] = class_losses[3]
         
-        # img_mask: (b, h, w) -> (b, c, h, w)
-        img_mask = img_mask.to(torch.int64)
-        img_mask = F.one_hot(img_mask, num_classes).permute(0, 3, 1, 2).float()
-        pred_class_list, mask_class_list = split_class(img_pred, img_mask)
-
-        # 计算出每个类别的损失
-        for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            loss = nn.CrossEntropyLoss()(pred_class, mask_class)
-            loss_dict[class_name] = loss
-
-        OM_loss = loss_dict['Organic matter']
-        OP_loss = loss_dict['Organic pores']
-        IOP_loss = loss_dict['Inorganic pores']
-        mean_loss = sum(loss_dict.values()) / len(loss_dict)
-        
-        return OM_loss, OP_loss, IOP_loss, mean_loss
+        return loss_dict
     
 class DiceLoss():
     
@@ -97,36 +86,37 @@ class DiceLoss():
         }
         self.num_classes = len(self.class_names)
 
-    def __call__(self, img_pred, img_mask):
+    def __call__(self, logits, targets):
         """
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
         """
-        loss_dict = {}
-        class_names = self.class_names
         num_classes = self.num_classes
         tensor_one = torch.tensor(1)
 
-        # img_mask: (b, h, w) -> (b, c, h, w)
-        img_mask = img_mask.to(torch.int64)
-        img_mask = F.one_hot(img_mask, num_classes + 1).permute(0, 3, 1, 2).float()  
-        pred_class_list, mask_class_list = split_class(img_pred, img_mask)
-
-        # 遍历计算每个类别的损失
-        for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            intersection = (pred_class * mask_class).sum()
-            union = pred_class.sum() + mask_class.sum()
-            dice = (2 * intersection + self.smooth) / (union + self.smooth)
-            loss_dict[class_name] = tensor_one - dice
-
-        # 损失值    
-        OM_loss = loss_dict['Organic matter']
-        OP_loss = loss_dict['Organic pores']
-        IOP_loss = loss_dict['Inorganic pores']
-        mean_loss = (sum(loss_dict.values()) - loss_dict['Background']) / len(loss_dict)
+        # logits argmax
+        logits = torch.argmax(logits, dim=1)
+        logits = F.one_hot(logits, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        # targets: (b, h, w) -> (b, c, h, w)
+        targets = targets.to(torch.int64)
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()  
         
+        # 计算总的损失
+        intersection = (logits * targets).sum(dim=(0,-2,-1))
+        union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
+        dice = (2 * intersection + self.smooth) / (union + self.smooth)
+        loss = tensor_one - dice
+        total_loss = loss.sum(dim=1) / num_classes
+        
+        # 计算每个类别的损失
+        loss_dict = {}
+        loss_dict['total_loss'] = total_loss
+        loss_dict['Background'] = loss[0]
+        loss_dict['Organic matter'] = loss[1]
+        loss_dict['Organic pores'] = loss[2]
+        loss_dict['Inorganic pores'] = loss[3]
 
-        return OM_loss, OP_loss, IOP_loss, mean_loss
+        return loss_dict
     
 class Focal_Loss():
     """
@@ -149,36 +139,46 @@ class Focal_Loss():
         }
         self.num_classes = len(self.class_names)
 
-    def __call__(self,img_pred, img_mask):
+    def __call__(self,logits, targets):
         """
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
-        """
+        """   
+        num_classes = logits.shape[1]
+        
+        # 计算loss
+        target = targets
+        targets = targets.to(torch.int64)
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        ce = nn.CrossEntropyLoss(label_smoothing=1e-7, reduction='none')    # 不进行缩减会返回（batch, h, w）的loss值
+       
+        # celoss期望的logits是(b, c, h, w), targets是(b, h, w)
+        ce_loss = ce(logits, targets)   # [8, 320, 320]
+        pt = torch.exp(-ce_loss)
+        loss = self.alpha * ((1-pt)**self.gamma) * ce_loss
+        total_loss = loss.mean()
+        
+        # # 初始化一个数组来存储每个类别的损失
+        # class_losses = torch.zeros(num_classes)
+
+        # # 计算每个类别的平均损失
+        # for i in range(num_classes):
+        #     mask = (target == i)  # 创建一个 mask，其中类别 i 的位置为 True
+        #     class_loss = ce_loss[mask]  # 选择该类别的损失
+        #     class_ce_loss = class_loss.mean()  # 计算该类别的平均损失
+        #     pt = torch.exp(-class_ce_loss)
+        #     class_loss = self.alpha * ((1-pt)**self.gamma) * class_ce_loss
+        #     class_losses[i] = class_loss
+
+        # 记录每个类别的损失
         loss_dict = {}
-        class_names = self.class_names
-        num_classes = self.num_classes
-        crossentropy = nn.CrossEntropyLoss()
+        loss_dict['total_loss'] = total_loss
+        # loss_dict['Background'] = class_losses[0]
+        # loss_dict['Organic matter'] = class_losses[1]
+        # loss_dict['Organic pores'] = class_losses[2]
+        # loss_dict['Inorganic pores'] = class_losses[3]
 
-        # img_mask: (b, h, w) -> (b, c, h, w)
-        img_mask = img_mask.to(torch.int64)
-        img_mask = img_mask.squeeze(1)
-        img_mask = F.one_hot(img_mask, num_classes + 1).permute(0, 3, 1, 2).float()
-        pred_class_list, mask_class_list = split_class(img_pred, img_mask)
-
-        # 遍历计算每个类别的损失
-        for pred_class, mask_class, class_name in zip(pred_class_list, mask_class_list, class_names):
-            ce_loss = crossentropy(pred_class, mask_class)
-            pt = torch.exp(-ce_loss)
-            focal_loss = self.alpha * ((1-pt)**self.gamma) * ce_loss
-            loss_dict[class_name] = focal_loss
-
-        # 损失值    
-        OM_loss = loss_dict['Organic matter']
-        OP_loss = loss_dict['Organic pores']
-        IOP_loss = loss_dict['Inorganic pores']
-        mean_loss = sum(loss_dict.values()) / len(loss_dict)
-
-        return OM_loss, OP_loss, IOP_loss, mean_loss
+        return loss_dict
 
             
 """
