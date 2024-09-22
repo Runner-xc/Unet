@@ -61,7 +61,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
     epoch_IOP_loss = 0.0
 
     # 使用 tqdm 包装 train_dataloader
-    train_dataloader = tqdm(train_dataloader, desc=f" Training on Epoch :{epoch}😀", leave=False)
+    train_dataloader = tqdm(train_dataloader, desc=f" Training on Epoch :{epoch + 1}😀", leave=False)
     
     for data in train_dataloader: 
         # 获取训练数据集的一个batch
@@ -75,7 +75,11 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
             # 训练 + 计算loss
             # pred_masks：list:(7, pred_mask)
             pred_masks = model(images)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
-            train_mean_loss = total_loss(pred_masks, masks, loss_fn)
+            if isinstance(pred_masks, list):
+                train_mean_loss = total_loss(pred_masks, masks, loss_fn)
+            else:
+                loss_dict = loss_fn(pred_masks, masks)
+                train_mean_loss = loss_dict['total_loss']
            
 
         # 反向传播
@@ -99,7 +103,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
         
     return epoch_train_loss
 
-def evaluate(model, device, data_loader, loss_fn, Metric):
+def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
     """
     model:       模型
     device:      设备
@@ -108,7 +112,10 @@ def evaluate(model, device, data_loader, loss_fn, Metric):
     Metric:      指标
     """
     model.eval()
-    Metric_list = np.zeros((4, 4))
+    if test:
+        Metric_list = np.zeros((4, 4))
+    else:
+        Metric_list = np.zeros((4, 4))
     val_mean_loss = 0.0
     val_OM_loss = 0.0
     val_OP_loss = 0.0
@@ -129,7 +136,7 @@ def evaluate(model, device, data_loader, loss_fn, Metric):
                 Metric_list += metrics    
 
             # 累加损失   # TODO : 2
-            val_mean_loss += loss_dict['total_loss'].sum().item()
+            val_mean_loss += loss_dict['total_loss'].item()
             # val_OM_loss += loss_dict['Organic matter'].sum().item()
             # val_OP_loss += loss_dict['Organic pores'].sum().item()
             # val_IOP_loss += loss_dict['Inorganic pores'].sum().item()

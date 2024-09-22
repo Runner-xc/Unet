@@ -9,6 +9,7 @@ import os
 from torch.optim import Adam, SGD, RMSprop, AdamW
 import time
 from model.u2net import u2net_full_config, u2net_lite_config
+from model.unet import UNet
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -18,6 +19,7 @@ from torch.amp import GradScaler, autocast
 from metrics import Evaluate_Metric
 from torch.utils.tensorboard import SummaryWriter
 import utils.transforms as T
+from torch.optim.lr_scheduler import StepLR
 
 
 class SODPresetTrain:
@@ -52,8 +54,8 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 now = time.localtime()
-detailed_time_str = time.strftime("%Y-%m-%d-%H-%M-%S", now)
-log_name = f"training_log_{detailed_time_str}.txt"
+detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S", now)
+log_name = f"log_{detailed_time_str}"
 
 def main(args):
     initial_time = time.time()
@@ -76,9 +78,63 @@ def main(args):
     save_scores_path = args.save_scores_path
     if not os.path.exists(save_scores_path):
         os.makedirs(save_scores_path)
+        
+    """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
+    # 加载模型
+    if args.model =="u2net_full":
+        model = u2net_full_config()
+    elif args.model =="u2net_lite":
+        model = u2net_lite_config()
+    elif args.model == "unet":
+        model = UNet(in_channels=3, n_classes=4, base_channels=64, bilinear=True)
+    else:
+        raise ValueError("model must be 'u2net_full' or 'u2net_lite' or 'unet'.")
 
+    # # 加载权重
+    # weights_path = None
+    # if weights_path is not None:
+    #     model.load_state_dict(torch.load(weights_path))['model']
+        
+    # 初始化模型
+    kaiming_initial(model)
+    model.to(device)
+
+    # 优化器
+    if args.optimizer == 'AdamW':
+        optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd) # 会出现梯度爆炸或消失
+
+    elif args.optimizer == 'SGD':
+        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9)
+
+    elif args.optimizer == 'RMSprop':
+
+        optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8)
+    else:
+        raise ValueError("optimizer must be 'AdamW', 'SGD' or 'RMSprop'.")
+    
+    # 调度器
+    
+    
+    # 损失函数
+    if args.loss_fn == 'CrossEntropyLoss':
+        loss_fn = CrossEntropyLoss()
+    elif args.loss_fn == 'DiceLoss':
+        loss_fn = DiceLoss()
+    elif args.loss_fn == 'FocalLoss':
+        loss_fn = Focal_Loss()
+    else:
+        raise ValueError("loss function must be 'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
+    
+    # 缩放器
+    scaler = torch.cuda.amp.GradScaler() if args.amp else None
+    Metrics = Evaluate_Metric()
+    
     # 日志保存路径
-    writer = SummaryWriter(f'./results/logs/{args.log_name}_{datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}')
+    save_logs_path = f"./results/logs/{args.model}"
+    
+    if not os.path.exists(save_logs_path):
+        os.makedirs(save_logs_path)
+    writer = SummaryWriter(f'{save_logs_path}/{datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}')
 
     """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     train_ratio = args.train_ratio
@@ -97,17 +153,21 @@ def main(args):
     #                 transforms.Resize((320, 320)),
     #                 transforms.RandomHorizontalFlip(p=0.5)])
     
-    # 加载数据集
+
+    # 划分数据集
     if args.small_data is not None:
         train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
                                                                                                     num_small_data=args.small_data, 
                                                                                                     # train_ratio=0.8, 
                                                                                                     # val_ratio=0.1, 
-                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV') 
+                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV',
+                            flag=args.split_flag) 
     
     else:
-        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio, val_ratio,
-                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV')# 保存划分好的数据集路径
+        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
+                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV',   # 保存划分好的数据集路径
+                            flag=args.split_flag)
+
     # 读取数据集
     train_datasets = SEM_DATA(train_datasets, 
                             transforms=SODPresetTrain((320, 320), crop_size=320))
@@ -128,44 +188,6 @@ def main(args):
                                 num_workers=num_workers,
                                 pin_memory=True)
     
-    """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
-    # 加载模型
-    if args.model =="u2net_full":
-        model = u2net_full_config()
-    elif args.model =="u2net_lite":
-        model = u2net_lite_config()
-    else:
-        raise ValueError("model must be 'u2net_full' or 'u2net_lite'.")
-
-    kaiming_initial(model)
-    model.to(device)
-
-    # 优化器
-    if args.optimizer == 'AdamW':
-        optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd) # 会出现梯度爆炸或消失
-
-    elif args.optimizer == 'SGD':
-        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9)
-
-    elif args.optimizer == 'RMSprop':
-
-        optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8)
-    else:
-        raise ValueError("optimizer must be 'AdamW', 'SGD' or 'RMSprop'.")
-    
-    # 损失函数
-    if args.loss_fn == 'CrossEntropyLoss':
-        loss_fn = CrossEntropyLoss()
-    elif args.loss_fn == 'DiceLoss':
-        loss_fn = DiceLoss()
-    elif args.loss_fn == 'FocalLoss':
-        loss_fn = Focal_Loss()
-    else:
-        raise ValueError("loss function must be 'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
-    # 缩放器
-    scaler = torch.cuda.amp.GradScaler() if args.amp else None
-    Metrics = Evaluate_Metric()
-    
     """——————————————————————————————————————————————训练 验证——————————————————————————————————————————————"""
     start_epoch = args.start_epoch
     end_epoch = args.end_epoch
@@ -175,17 +197,18 @@ def main(args):
     current_mae, current_f1 = float('inf'), 0.0
     
     for epoch in range(start_epoch, end_epoch):
-        print(f"--Training-- 👉 epoch {epoch+1}/{end_epoch}😀😀😀")
+        print(f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈")
+        print(f"--Training-- 😀")
         # 记录时间
         start_time = time.time()
         # 训练
         total_loss = train_one_epoch(model, 
-                                                                optimizer, 
-                                                                epoch, 
-                                                                train_dataloader, 
-                                                                device=device, 
-                                                                loss_fn=loss_fn, 
-                                                                scaler=scaler) # loss
+                                    optimizer, 
+                                    epoch, 
+                                    train_dataloader, 
+                                    device=device, 
+                                    loss_fn=loss_fn, 
+                                    scaler=scaler) # loss
 
         
         save_file = {"model": model.state_dict(),
@@ -214,17 +237,17 @@ def main(args):
 
         # 打印
 
-        print(f"[epoch: {epoch}]\n"
+        print(
             #   f"train_OM_loss: {train_OM_loss:.3f}\n"
             #   f"train_OP_loss: {train_OP_loss:.3f}\n"
             #   f"train_IOP_loss: {train_IOP_loss:.3f}\n"
               f"train_mean_loss: {train_mean_loss:.3f}\n"
-              f"train_cost_time: {train_cost_time:.2f}s")
+              f"train_cost_time: {train_cost_time:.2f}s\n")
         
         # 验证
         if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
 
-            print(f"--Validation-- 👉 epoch {epoch+1}/{end_epoch}😀😀😀")
+            print(f"--Validation-- 😀")
             # 记录验证开始时间
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
@@ -249,12 +272,12 @@ def main(args):
             val_cost_time = end_time - start_time
 
             # 打印结果
-            print(f"[epoch: {epoch}]\n"
+            print(
                 #   f"val_OM_loss: {val_OM_loss:.3f}\n"
                 #   f"val_OP_loss: {val_OP_loss:.3f}\n"
                 #   f"val_IOP_loss: {val_IOP_loss:.3f}\n"
                   f"val_mean_loss: {val_mean_loss:.3f}\n"
-                  f"val_cost_time: {val_cost_time:.2f}s")
+                  f"val_cost_time: {val_cost_time:.2f}s\n\n")
             
             # 记录日志
             tb = args.tb
@@ -303,9 +326,14 @@ def main(args):
             # 保存指标
             metrics_table_header = ['Metrics_Name', 'Mean']
             metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores']
-            epoch_s = f" 👉 epoch :{epoch} 👈\n"
-            time_s = f" 👉 time :{datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} 👈\n"
-            cost_s = f" 👉 cost_time :{val_cost_time / 60:.2f}mins 👈\n"
+            epoch_s = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
+            model_s = f"model : {args.model} \n"
+            lr_s = f"lr : {args.lr} \n"
+            wd_s = f"wd : {args.wd} \n"
+            loss_fn_s = f"loss_fn : {args.loss_fn} \n"
+            time_s = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
+            cost_s = f"cost_time :{val_cost_time / 60:.2f}mins \n"
+            
             metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
             metrics_table = [[metric_name,
                               metrics_dict[metric_name][3],
@@ -316,34 +344,38 @@ def main(args):
                              for metric_name in metrics_table_left
                             ]
             table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-            loss_s = F" 👉 mean_loss :{val_mean_loss:.3f} 👈\n"
+            loss_s = F"mean_loss : {val_mean_loss:.3f}  🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info = epoch_s + time_s + '\n' + table_s + '\n' + '\n' + loss_s + cost_s + '\n' + '\n'
+            write_info = epoch_s + model_s + lr_s + wd_s + loss_fn_s + table_s + '\n' + loss_s + cost_s + time_s + '\n'
 
             # 打印结果
             print(write_info)
 
             # 保存结果
-            results_file = f"{log_name}.txt"
+            results_file = f"{args.model}_{log_name}.txt"
             file_path = os.path.join(save_scores_path, results_file)
             with open(file_path, "a") as f:
                 f.write(write_info)
         # loss清零
 
+        if args.save_weights:
+            # 保存best模型
+            save_weights_path = f"results/save_weights/{args.model}"  # 保存权重路径
+            
+            if not os.path.exists(save_weights_path):
+                os.makedirs(save_weights_path)
 
-        # 保存best模型
-        if not os.path.exists("results/save_weights"):
-            os.makedirs("results/save_weights")
+            if current_mae >= val_mean_loss and current_f1 <= val_metrics["F1_scores"][3]:
+                torch.save(save_file, f"{save_weights_path}/model_best.pth")
 
-        if current_mae >= val_mean_loss and current_f1 <= val_metrics["F1_scores"][3]:
-            torch.save(save_file, "results/save_weights/model_best.pth")
-
-        # only save latest 10 epoch weights
-        if os.path.exists(f"results/save_weights/model_ep:{epoch-10}.pth"):
-            os.remove(f"results/save_weights/model_ep:{epoch-10}.pth")
-
-        torch.save(save_file, f"results/save_weights/model_ep:{epoch}.pth")
+            # only save latest 10 epoch weights
+            if os.path.exists(f"{save_weights_path}/model_ep:{epoch-10}.pth"):
+                os.remove(f"{save_weights_path}/model_ep:{epoch-10}.pth")
+                
+            if not os.path.exists(save_weights_path):
+                os.makedirs(save_weights_path)
+            torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth")
 
     total_time = time.time() - initial_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -357,23 +389,25 @@ if __name__ == '__main__':
 
     parser.add_argument('--data_path', type=str, default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_320.csv", help="path to csv dataset")
     
-    parser.add_argument('--model', type=str, default="u2net_full", help="'u2net_full' 、 'u2net_lite'")
-    parser.add_argument('--loss_fn', type=str, default='CrossEntropyLoss', help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
+    parser.add_argument('--model', type=str, default="unet", help="'u2net_full' or 'u2net_lite' or 'unet'")
+    parser.add_argument('--loss_fn', type=str, default='FocalLoss', help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
     parser.add_argument('--optimizer', type=str, default='AdamW', help="'AdamW', 'SGD' or 'RMSprop'.")
     parser.add_argument('--save_scores_path', type=str, default='results/save_scores', help="root path to save scores on training and valing")
-    parser.add_argument('--log_name', type=str, default='u2net')
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--amp', type=bool, default=True, help='use mixed precision training or not')
-    parser.add_argument('--tb', type=bool, default=False, help='use tensorboard or not')
-
+    parser.add_argument('--tb', type=bool, default=False, help='use tensorboard or not')   
+    parser.add_argument('--split_flag', type=bool, default=True, help='split data or not')
+    
+    parser.add_argument('--save_weights', type=bool, default=True, help='save weights or not')
+    
     parser.add_argument('--train_ratio', type=float, default=0.8)
     parser.add_argument('--val_ratio', type=float, default=0.1)
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
     parser.add_argument('--end_epoch', type=int, default=150, help='ending epoch')
     parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--wd', type=float, default=1e-5, help='weight decay')
-    parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
+    parser.add_argument('--wd', type=float, default=1e-4, help='weight decay')
+    parser.add_argument('--eval_interval', type=int, default=10, help='interval for evaluation')
     parser.add_argument('--small_data', type=int, default=None, help='number of small data')
   
 

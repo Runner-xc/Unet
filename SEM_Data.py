@@ -68,7 +68,7 @@ class SEM_DATA(Dataset):
         assert os.path.exists(mask_path), f"The mask path '{mask_path}' does not exist."
         
         # 读取数据 
-        img = Image.open(img_path)
+        img = Image.open(img_path).convert('RGB')
         mask = Image.open(mask_path).convert('L')   # 将mask转换为灰度图像, 不然会多一个维度
         img_array = np.array(img)
         mask_array = np.array(mask)
