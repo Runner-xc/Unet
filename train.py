@@ -14,6 +14,8 @@ from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
+from utils import param_modification
+from utils import write_experiment_log
 from loss_fn import *
 from torch.amp import GradScaler, autocast
 from metrics import Evaluate_Metric
@@ -53,13 +55,59 @@ class SODPresetEval:
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-now = time.localtime()
-detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S", now)
-log_name = f"log_{detailed_time_str}"
+
+detailed_time_str = time.strftime("%Y-%m-%d")
 
 def main(args):
-    initial_time = time.time()
 
+    """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
+    
+    params = vars(args)
+    """映射参数序号到参数名称"""
+    param_map = {
+        2: 'lr',
+        3: 'l1_lambda',
+        4: 'l2_lambda',
+        5: 'dropout_p',
+        6: 'eval_interval',
+        7: 'batch_size',
+        8: 'optimizer',
+        9: 'small_data',
+        10: 'Tmax',
+        11: 'eta_min',
+        12: 'last_epoch',
+        13: 'save_weights',
+        14: 'scheduler',
+        15: 'model',
+        16: 'loss_fn',
+        17: 'split_flag'
+    }
+
+    """筛选需要打印的参数"""
+    printed_params = list(param_map.values())
+    params_dict = {}
+    params_dict['Parameter'] = printed_params
+    params_dict['Value'] = [str(params[p]) for p in printed_params]
+    params_header = ['Parameter', 'Value']
+
+    """打印参数"""
+    print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
+    
+    """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
+    initial_time = time.time()
+    x = input("是否需要修改配置参数：\n 1. 不修改, 继续。 \n 2. lr \n 3. l1_lambda \n 4. l2_lambda \n 5. dropout_p \n \
+6. eval_interval \n 7. batch_size \n 8. optimizer \n 9. small_data \n 10. Tmax \n 11. eta_min \n \
+12. last_epoch \n 13. save_weights \n 14. scheduler \n 15. model \n 16. loss_fn \n 17. split_flag \n\
+请输入需要修改的参数序号（int）： ")
+    
+    args, contents = param_modification.param_modification(args, x)
+    save_modification_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/modification_log/{args.model}/{detailed_time_str}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}.md"
+    if not os.path.exists(os.path.dirname(save_modification_path)):
+        os.makedirs(os.path.dirname(save_modification_path))
+    write_experiment_log.write_exp_logs(save_modification_path, contents) 
+        
+    """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
+    
     # 定义设备
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     batch_size = args.batch_size
@@ -68,8 +116,7 @@ def main(args):
     save_scores_path = args.save_scores_path
     if not os.path.exists(save_scores_path):
         os.makedirs(save_scores_path)
-        
-    """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
+         
     # 加载模型
     
     assert args.model in ["u2net_full", "u2net_lite", "unet"], \
@@ -79,11 +126,27 @@ def main(args):
     elif args.model =="u2net_lite":
         model = u2net_lite_config()
     elif args.model == "unet":
-        model = UNet(in_channels=3, n_classes=4, base_channels=64, bilinear=True)
+        if args.small_data:
+            
+            # 重新设定dropout rate
+            setattr(args, 'dropout_p', 0.5)
+            model = UNet(
+                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
+        else:
+            model = UNet(
+                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
+ 
     else:
-        model = UNet(in_channels=3, n_classes=4, base_channels=64, bilinear=True)
-
-         
+        if args.small_data:
+            
+            # 重新设定dropout rate
+            setattr(args, 'dropout_p', 0.5)
+            model = UNet(
+                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
+        else:
+            model = UNet(
+                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
+    
     # 初始化模型
     kaiming_initial(model)
     model.to(device)  
@@ -144,9 +207,6 @@ def main(args):
                                       eta_min=args.eta_min,
                                       verbose=True,
                                       last_epoch=args.last_epoch)
-        setattr(args, 'Tmax', 20)
-        setattr(args, 'eta_min', 0.0001)
-        setattr(args, 'last_epoch', 5)
         
     elif args.scheduler == 'ReduceLROnPlateau':
         scheduler = ReduceLROnPlateau(optimizer, 
@@ -164,9 +224,6 @@ def main(args):
                                       eta_min=args.eta_min,
                                       verbose=True,
                                       last_epoch=args.last_epoch)
-        setattr(args, 'Tmax', 20)
-        setattr(args, 'eta_min', 0.0001)
-        setattr(args, 'last_epoch', 5)
         
     # 损失函数
     
@@ -189,7 +246,7 @@ def main(args):
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
-    writer = SummaryWriter(f'{save_logs_path}/{datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}')
+    writer = SummaryWriter(f'{save_logs_path}/{detailed_time_str}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}')
     """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
     
     if args.resume:
@@ -422,7 +479,7 @@ def main(args):
             lr_s = f"lr : {args.lr} \n"
             wd_s = f"wd : {args.wd} \n"  #####
             l1_lambda = f"l1_lambda : {args.l1_lambda} \n"
-            l2_lambda = f"λ : {args.l2_lambda} \n"
+            l2_lambda = f"l2_lambda : {args.l2_lambda} \n"
             scheduler_s = f"scheduler : {args.scheduler} \n"
             loss_fn_s = f"loss_fn : {args.loss_fn} \n"
             time_s = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
@@ -447,7 +504,7 @@ def main(args):
             print(write_info)
 
             # 保存结果
-            results_file = f"{args.model}_{log_name}.txt"
+            results_file = f"{args.model}/{detailed_time_str}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}.txt"
             file_path = os.path.join(save_scores_path, results_file)
             with open(file_path, "a") as f:
                 f.write(write_info)
@@ -499,7 +556,7 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path', type=str, 
-                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_320.csv", 
+                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_224.csv", 
                         help="path to csv dataset")
     
     parser.add_argument('--save_scores_path', type=str, 
@@ -524,8 +581,9 @@ if __name__ == '__main__':
     
     # 正则化
     parser.add_argument('--elnloss', type=bool, default=True, help='use elnloss or not')
-    parser.add_argument('--l1_lamnda', type=float, default=0.001, help="L1 factor")
+    parser.add_argument('--l1_lambda', type=float, default=0.001, help="L1 factor")
     parser.add_argument('--l2_lambda', type=float, default=0.001, help=' L2 factor')
+    parser.add_argument('--dropout_p', type=float, default=0.0, help='dropout rate')
     
     
     parser.add_argument('--device', type=str, default='cuda:0')
@@ -539,14 +597,14 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio', type=float, default=0.8)
     parser.add_argument('--val_ratio', type=float, default=0.1)
-    parser.add_argument('--batch_size', type=int, default=12)
+    parser.add_argument('--batch_size', type=int, default=20)
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
     parser.add_argument('--end_epoch', type=int, default=150, help='ending epoch')
     parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
     parser.add_argument('--wd', type=float, default=1e-3, help='weight decay')
     
-    parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
-    parser.add_argument('--small_data', type=int, default=100, help='number of small data')
+    parser.add_argument('--eval_interval', type=int, default=10, help='interval for evaluation')
+    parser.add_argument('--small_data', type=int, default=None, help='number of small data')
     parser.add_argument('--Tmax', type=int, default=20, help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min', type=float, default=0.0001, help='minimum of lr for CosineAnnealingLR')
     parser.add_argument('--last_epoch', type=int, default=5, help='start epoch of lr decay for CosineAnnealingLR')

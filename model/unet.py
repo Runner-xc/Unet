@@ -68,9 +68,11 @@ class OutConv(nn.Module):
     
 class UNet(nn.Module):
     def __init__(self, in_channels,
-                 n_classes, 
+                 n_classes,
+                 p, 
                  base_channels=64,
-                 bilinear=True):
+                 bilinear=True
+                 ):
         super(UNet, self).__init__()
         self.in_channels = in_channels
         self.n_classes = n_classes
@@ -82,7 +84,8 @@ class UNet(nn.Module):
         self.down3 = Down(base_channels*4, base_channels*8)
         factor = 2 if bilinear else 1
         self.down4 = Down(base_channels*8, base_channels*16 // factor)
-        self.dropout = nn.Dropout2d(p=0.25)
+        
+        self.dropout = nn.Dropout2d(p=p)
         
         self.up1 = Up(base_channels * 16, base_channels * 8 // factor, bilinear)
         self.up2 = Up(base_channels * 8, base_channels * 4 // factor, bilinear)

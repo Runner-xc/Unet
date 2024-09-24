@@ -6,4 +6,5 @@ SEM_DATA/
 *.onnx
 *.jpg
 *.png
+*.jpeg
 !u2net.png

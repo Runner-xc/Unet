@@ -106,7 +106,7 @@ class DiceLoss():
         union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
         dice = (2 * intersection + self.smooth) / (union + self.smooth)
         loss = tensor_one - dice
-        total_loss = loss.sum(dim=1) / num_classes
+        total_loss = loss.sum() / num_classes
         
         # 计算每个类别的损失
         loss_dict = {}

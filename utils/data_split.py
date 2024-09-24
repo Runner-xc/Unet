@@ -5,6 +5,7 @@
 3. 测试集
 """
 import pandas as pd
+import os
 
 def data_split_to_train_val_test(data_path, flag, train_ratio=0.8, val_ratio=0.1, save_path=None):
     """
@@ -33,11 +34,16 @@ def data_split_to_train_val_test(data_path, flag, train_ratio=0.8, val_ratio=0.1
 
         # 如果提供了保存路径，则保存数据集
         if save_path:
-            train_data.to_csv(f'{save_path}/train_data.csv', index=False)
-            val_data.to_csv(f'{save_path}/val_data.csv', index=False)
-            test_data.to_csv(f'{save_path}/test_data.csv', index=False)
+            train_data.to_csv(f"{save_path}/train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            val_data.to_csv(f"{save_path}/val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            test_data.to_csv(f"{save_path}/test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            print("数据集划分完成！")
 
-    return f'{save_path}/train_data.csv', f'{save_path}/val_data.csv', f'{save_path}/test_data.csv'
+    train_data_save_path = f"{save_path}/train_{os.path.basename(data_path).split('.')[0]}.csv"
+    val_data_save_path = f"{save_path}/val_{os.path.basename(data_path).split('.')[0]}.csv"
+    test_data_save_path = f"{save_path}/test_{os.path.basename(data_path).split('.')[0]}.csv"
+
+    return train_data_save_path, val_data_save_path, test_data_save_path
 
 def small_data_split_to_train_val_test(data_path, num_small_data: int, flag, train_ratio=0.8, val_ratio=0.1, save_path=None):
     """
@@ -66,11 +72,16 @@ def small_data_split_to_train_val_test(data_path, num_small_data: int, flag, tra
 
         # 如果提供了保存路径，则保存数据集
         if save_path:
-            train_data.to_csv(f'{save_path}/train_small_data.csv', index=False)
-            val_data.to_csv(f'{save_path}/val_small_data.csv', index=False)
-            test_data.to_csv(f'{save_path}/test_small_data.csv', index=False)
+            train_data.to_csv(f"{save_path}/small_train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            val_data.to_csv(f"{save_path}/small_val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            test_data.to_csv(f"{save_path}/small_test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            print("数据集划分完成！")
+        
+    train_data_save_path = f"{save_path}/small_train_{os.path.basename(data_path).split('.')[0]}.csv"
+    val_data_save_path = f"{save_path}/small_val_{os.path.basename(data_path).split('.')[0]}.csv"
+    test_data_save_path = f"{save_path}/small_test_{os.path.basename(data_path).split('.')[0]}.csv"
 
-    return f'{save_path}/train_small_data.csv', f'{save_path}/val_small_data.csv', f'{save_path}/test_small_data.csv'
+    return train_data_save_path, val_data_save_path, test_data_save_path
 
 if __name__ == '__main__':
     data_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/SEM_path.csv"
