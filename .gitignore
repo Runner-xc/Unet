@@ -1,6 +1,7 @@
 datasets/
 SEM_DATA/
 ../results/
+./results/
 
 *.onnx
 *.jpg
