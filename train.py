@@ -19,7 +19,7 @@ from torch.amp import GradScaler, autocast
 from metrics import Evaluate_Metric
 from torch.utils.tensorboard import SummaryWriter
 import utils.transforms as T
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 
 
 class SODPresetTrain:
@@ -60,16 +60,6 @@ log_name = f"log_{detailed_time_str}"
 def main(args):
     initial_time = time.time()
 
-    """参数列表"""
-    params = vars(args)
-    params_dict = {}
-    params_dict['Parameter'] = [str(p[0]) for p in list(params.items())]
-    params_dict['Value'] = [str(p[1]) for p in list(params.items())]
-    params_header = ['Parameter', 'Value']
-    """打印参数"""
-    print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
-    
-
     # 定义设备
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     batch_size = args.batch_size
@@ -81,6 +71,9 @@ def main(args):
         
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
     # 加载模型
+    
+    assert args.model in ["u2net_full", "u2net_lite", "unet"], \
+        f"model must be 'u2net_full' or 'u2net_lite' or 'unet', but got {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
     elif args.model =="u2net_lite":
@@ -88,34 +81,96 @@ def main(args):
     elif args.model == "unet":
         model = UNet(in_channels=3, n_classes=4, base_channels=64, bilinear=True)
     else:
-        raise ValueError("model must be 'u2net_full' or 'u2net_lite' or 'unet'.")
+        model = UNet(in_channels=3, n_classes=4, base_channels=64, bilinear=True)
 
-    # # 加载权重
-    # weights_path = None
-    # if weights_path is not None:
-    #     model.load_state_dict(torch.load(weights_path))['model']
-        
+         
     # 初始化模型
     kaiming_initial(model)
-    model.to(device)
+    model.to(device)  
 
     # 优化器
+    
+    assert args.optimizer in ['AdamW', 'SGD', 'RMSprop'], \
+        f'optimizer must be AdamW, SGD, RMSprop but got {args.optimizer}'
+        
     if args.optimizer == 'AdamW':
-        optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd) # 会出现梯度爆炸或消失
+        optimizer = AdamW(model.parameters(), lr=args.lr, 
+                        #   weight_decay=args.wd
+                          ) # 会出现梯度爆炸或消失
 
     elif args.optimizer == 'SGD':
-        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9)
+        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9, 
+                        # weight_decay=args.wd
+                        )
 
     elif args.optimizer == 'RMSprop':
 
-        optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8)
+        optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8, 
+                            # weight_decay=args.wd
+                            )
     else:
-        raise ValueError("optimizer must be 'AdamW', 'SGD' or 'RMSprop'.")
+        optimizer = AdamW(model.parameters(), lr=args.lr, 
+                        #   weight_decay=args.wd
+                          )
     
     # 调度器
-    
-    
+    """
+        "LambdaLR",
+        "MultiplicativeLR",
+        "StepLR",
+        "MultiStepLR",
+        "ConstantLR",
+        "LinearLR",
+        "ExponentialLR",
+        "SequentialLR",
+        "CosineAnnealingLR",
+        "ChainedScheduler",
+        "ReduceLROnPlateau",
+        "CyclicLR",
+        "CosineAnnealingWarmRestarts",
+        "OneCycleLR",
+        "PolynomialLR",
+        "LRScheduler",
+    """
+    assert args.scheduler in ['CosineAnnealingLR', 'ReduceLROnPlateau'], \
+            f'scheduler must be CosineAnnealingLR 、ReduceLROnPlateau, but got {args.scheduler}'
+    if args.scheduler == 'CosineAnnealingLR':
+        if hasattr(optimizer, "param_groups") and len(optimizer.param_groups) > 0 and "initial_lr" not in optimizer.param_groups[0]:
+            # 如果optimizer的param_groups中没有initial_lr，则添加initial_lr
+            for param_group in optimizer.param_groups:
+                param_group['initial_lr'] = param_group['lr']
+        scheduler = CosineAnnealingLR(optimizer,
+                                      T_max=args.Tmax, 
+                                      eta_min=args.eta_min,
+                                      verbose=True,
+                                      last_epoch=args.last_epoch)
+        setattr(args, 'Tmax', 20)
+        setattr(args, 'eta_min', 0.0001)
+        setattr(args, 'last_epoch', 5)
+        
+    elif args.scheduler == 'ReduceLROnPlateau':
+        scheduler = ReduceLROnPlateau(optimizer, 
+                                      mode='min', 
+                                      factor=0.1, 
+                                      patience=10, 
+                                      threshold=1e-4, 
+                                      threshold_mode='rel', 
+                                      cooldown=0, 
+                                      min_lr=0, 
+                                      eps=1e-8)
+    else:
+        scheduler = CosineAnnealingLR(optimizer,
+                                      T_max=args.Tmax, 
+                                      eta_min=args.eta_min,
+                                      verbose=True,
+                                      last_epoch=args.last_epoch)
+        setattr(args, 'Tmax', 20)
+        setattr(args, 'eta_min', 0.0001)
+        setattr(args, 'last_epoch', 5)
+        
     # 损失函数
+    
+    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss']
     if args.loss_fn == 'CrossEntropyLoss':
         loss_fn = CrossEntropyLoss()
     elif args.loss_fn == 'DiceLoss':
@@ -123,7 +178,7 @@ def main(args):
     elif args.loss_fn == 'FocalLoss':
         loss_fn = Focal_Loss()
     else:
-        raise ValueError("loss function must be 'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
+        loss_fn = DiceLoss()
     
     # 缩放器
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
@@ -135,6 +190,28 @@ def main(args):
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
     writer = SummaryWriter(f'{save_logs_path}/{datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")}')
+    """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
+    
+    if args.resume:
+        checkpoint = torch.load(args.resume)
+        epoch = checkpoint['epoch']
+        optimizer = checkpoint['optimizer']
+        Metrics = checkpoint['Metrics']
+        scheduler = checkpoint['scheduler']
+        best_mean_loss = checkpoint['best_mean_loss']
+        args = checkpoint['args']    
+        
+    
+    """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
+    
+    """参数列表"""
+    params = vars(args)
+    params_dict = {}
+    params_dict['Parameter'] = [str(p[0]) for p in list(params.items())]
+    params_dict['Value'] = [str(p[1]) for p in list(params.items())]
+    params_header = ['Parameter', 'Value']
+    """打印参数"""
+    print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
 
     """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     train_ratio = args.train_ratio
@@ -194,9 +271,11 @@ def main(args):
 
 
   
-    current_mae, current_f1 = float('inf'), 0.0
+    best_mean_loss, current_miou = float('inf'), 0.0
+    current_mean_loss = float('inf')
     
     for epoch in range(start_epoch, end_epoch):
+        
         print(f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈")
         print(f"--Training-- 😀")
         # 记录时间
@@ -208,12 +287,16 @@ def main(args):
                                     train_dataloader, 
                                     device=device, 
                                     loss_fn=loss_fn, 
-                                    scaler=scaler) # loss
+                                    scaler=scaler,
+                                    elnloss=args.elnloss,     #  Elastic Net正则化
+                                    l1_lambda=args.l1_lambda,
+                                    l2_lambda=args.l2_lambda) # loss
 
         
         save_file = {"model": model.state_dict(),
                      "optimizer": optimizer.state_dict(),
                      "Metrics": Metrics.state_dict(),
+                     "scheduler": scheduler.state_dict(),
                      "epoch": epoch,
                      "args": args}
         # 求平均
@@ -258,6 +341,10 @@ def main(args):
             # val_OP_loss = val_OP_loss / len(val_dataloader)
             # val_IOP_loss = val_IOP_loss / len(val_dataloader)
             val_mean_loss = val_mean_loss / len(val_dataloader)
+            
+            
+            # 更新调度器
+            scheduler.step()
 
             # 评价指标 metrics = [recall, precision, dice, f1_score]
             val_metrics ={}
@@ -266,7 +353,7 @@ def main(args):
             val_metrics["Precision"] = Metric_list[1]
             val_metrics["Dice"] = Metric_list[2]
             val_metrics["F1_scores"] = Metric_list[3]
-
+            val_metrics["mIoU"] = Metric_list[4]
             # 验证====结束时间
             end_time = time.time()
             val_cost_time = end_time - start_time
@@ -301,6 +388,10 @@ def main(args):
                 writer.add_scalars('val/F1', 
                                 {'Mean':val_metrics['F1_scores'][3]},
                                 epoch) 
+                
+                writer.add_scalars('val/mIoU', 
+                                {'Mean':val_metrics['mIoU']},
+                                epoch) 
                 # writer.add_scalars('val/F2', 
                 #                 {'Mean':val_metrics['F2_scores'][0], 
                 #                     'OM': val_metrics['F2_scores'][1], 
@@ -325,18 +416,21 @@ def main(args):
             
             # 保存指标
             metrics_table_header = ['Metrics_Name', 'Mean']
-            metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores']
+            metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU']
             epoch_s = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
             model_s = f"model : {args.model} \n"
             lr_s = f"lr : {args.lr} \n"
-            wd_s = f"wd : {args.wd} \n"
+            wd_s = f"wd : {args.wd} \n"  #####
+            l1_lambda = f"l1_lambda : {args.l1_lambda} \n"
+            l2_lambda = f"λ : {args.l2_lambda} \n"
+            scheduler_s = f"scheduler : {args.scheduler} \n"
             loss_fn_s = f"loss_fn : {args.loss_fn} \n"
             time_s = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
             cost_s = f"cost_time :{val_cost_time / 60:.2f}mins \n"
             
             metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
             metrics_table = [[metric_name,
-                              metrics_dict[metric_name][3],
+                              metrics_dict[metric_name][-1],
                             #   metrics_dict[metric_name][0],
                             #   metrics_dict[metric_name][1],
                             #   metrics_dict[metric_name][2]
@@ -344,10 +438,10 @@ def main(args):
                              for metric_name in metrics_table_left
                             ]
             table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-            loss_s = F"mean_loss : {val_mean_loss:.3f}  🍎🍎🍎\n"
+            loss_s = f"mean_loss : {val_mean_loss:.3f}  🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info = epoch_s + model_s + lr_s + wd_s + loss_fn_s + table_s + '\n' + loss_s + cost_s + time_s + '\n'
+            write_info = epoch_s + model_s + lr_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + loss_s + table_s + '\n' + cost_s + time_s + '\n'
 
             # 打印结果
             print(write_info)
@@ -357,17 +451,20 @@ def main(args):
             file_path = os.path.join(save_scores_path, results_file)
             with open(file_path, "a") as f:
                 f.write(write_info)
-        # loss清零
-
+        # loss清零           
+               
+       
         if args.save_weights:
             # 保存best模型
-            save_weights_path = f"results/save_weights/{args.model}"  # 保存权重路径
+            save_weights_path = f"{args.save_weight_path}/{args.model}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}"  # 保存权重路径
             
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
 
-            if current_mae >= val_mean_loss and current_f1 <= val_metrics["F1_scores"][3]:
+            if best_mean_loss >= val_mean_loss and current_miou <= val_metrics["mIoU"][-1]:
                 torch.save(save_file, f"{save_weights_path}/model_best.pth")
+                best_mean_loss = val_mean_loss
+                current_miou = val_metrics["mIoU"][-1]
 
             # only save latest 10 epoch weights
             if os.path.exists(f"{save_weights_path}/model_ep:{epoch-10}.pth"):
@@ -375,7 +472,20 @@ def main(args):
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
-            torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth")
+            torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth") 
+        
+        # 记录验证loss是否出现上升         
+        count_bad_loss = 0
+        if val_mean_loss <= current_mean_loss:
+            current_mean_loss = val_mean_loss
+                     
+        elif val_mean_loss > current_mean_loss:
+            count_bad_loss += 1 
+    
+        # 早停判断
+        if count_bad_loss >= 5:
+            print('验证loss异常，训练终止。。。')
+            break
 
     total_time = time.time() - initial_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -386,30 +496,60 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
-
-    parser.add_argument('--data_path', type=str, default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_320.csv", help="path to csv dataset")
     
-    parser.add_argument('--model', type=str, default="unet", help="'u2net_full' or 'u2net_lite' or 'unet'")
-    parser.add_argument('--loss_fn', type=str, default='FocalLoss', help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
-    parser.add_argument('--optimizer', type=str, default='AdamW', help="'AdamW', 'SGD' or 'RMSprop'.")
-    parser.add_argument('--save_scores_path', type=str, default='results/save_scores', help="root path to save scores on training and valing")
+    # 保存路径
+    parser.add_argument('--data_path', type=str, 
+                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_320.csv", 
+                        help="path to csv dataset")
+    
+    parser.add_argument('--save_scores_path', type=str, 
+                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_scores', 
+                        help="root path to save scores on training and valing")
+    
+    parser.add_argument('--save_weight_path', type=str,
+                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights",
+                        help="the path of save weights")
+    # 模型配置
+    parser.add_argument('--model', type=str, default="unet", 
+                        help="'u2net_full' or 'u2net_lite' or 'unet'")
+    
+    parser.add_argument('--loss_fn', type=str, default='FocalLoss', 
+                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
+    
+    parser.add_argument('--optimizer', type=str, default='AdamW', 
+                        help="'AdamW', 'SGD' or 'RMSprop'.")
+    
+    parser.add_argument('--scheduler', type=str, default='CosineAnnealingLR', 
+                        help="'CosineAnnealingLR', 'ReduceLROnPlateau'.")
+    
+    # 正则化
+    parser.add_argument('--elnloss', type=bool, default=True, help='use elnloss or not')
+    parser.add_argument('--l1_lamnda', type=float, default=0.001, help="L1 factor")
+    parser.add_argument('--l2_lambda', type=float, default=0.001, help=' L2 factor')
+    
+    
     parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument('--resume', type=str, default=None, help="the path of weight for resuming")
     parser.add_argument('--amp', type=bool, default=True, help='use mixed precision training or not')
     parser.add_argument('--tb', type=bool, default=False, help='use tensorboard or not')   
-    parser.add_argument('--split_flag', type=bool, default=True, help='split data or not')
+    parser.add_argument('--split_flag', type=bool, default=False, help='split data or not')
     
     parser.add_argument('--save_weights', type=bool, default=True, help='save weights or not')
     
+    # 训练参数
     parser.add_argument('--train_ratio', type=float, default=0.8)
     parser.add_argument('--val_ratio', type=float, default=0.1)
-    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--batch_size', type=int, default=12)
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
     parser.add_argument('--end_epoch', type=int, default=150, help='ending epoch')
-    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--wd', type=float, default=1e-4, help='weight decay')
-    parser.add_argument('--eval_interval', type=int, default=10, help='interval for evaluation')
-    parser.add_argument('--small_data', type=int, default=None, help='number of small data')
-  
+    parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
+    parser.add_argument('--wd', type=float, default=1e-3, help='weight decay')
+    
+    parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
+    parser.add_argument('--small_data', type=int, default=100, help='number of small data')
+    parser.add_argument('--Tmax', type=int, default=20, help='the numbers of half of T for CosineAnnealingLR')
+    parser.add_argument('--eta_min', type=float, default=0.0001, help='minimum of lr for CosineAnnealingLR')
+    parser.add_argument('--last_epoch', type=int, default=5, help='start epoch of lr decay for CosineAnnealingLR')
 
     args = parser.parse_args()
     main(args)

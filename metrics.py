@@ -146,7 +146,28 @@ class Evaluate_Metric(nn.Module):
 
         return OM_dice, OP_dice, IOP_dice, dice
 
-      
+    def mIoU(self, logits, targets):
+        """
+        mIoU: 平均交并比
+        """
+        num_classes = logits.shape[1]
+        logits = torch.argmax(logits, dim=1)
+        logits = F.one_hot(logits, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        targets = targets.to(torch.int64)
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        
+        # 计算总体mIoU
+        intersection = (logits * targets).sum(dim=(0,-2,-1))
+        union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1)) - intersection
+        iou =  intersection / (union + self.smooth)
+        
+        OM_iou = iou[1].item()
+        OP_iou = iou[2].item()
+        IOP_iou = iou[3].item()
+        mIoU = iou.mean()
+        mIoU = mIoU.item()
+        
+        return OM_iou, OP_iou, IOP_iou, mIoU
 
     def update(self, img_pred, img_mask):
         """
@@ -156,8 +177,9 @@ class Evaluate_Metric(nn.Module):
         precision = self.precision(img_pred, img_mask)
         dice = self.dice_coefficient(img_pred, img_mask)
         f1_score = self.f1_score(img_pred, img_mask)
-
-        metrics = [recall, precision, dice, f1_score]
+        mIoU = self.mIoU(img_pred, img_mask)
+        
+        metrics = [recall, precision, dice, f1_score, mIoU]
         metrics = np.stack(metrics, axis=0)
         metrics = np.nan_to_num(metrics)
 

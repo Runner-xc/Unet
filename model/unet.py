@@ -82,6 +82,8 @@ class UNet(nn.Module):
         self.down3 = Down(base_channels*4, base_channels*8)
         factor = 2 if bilinear else 1
         self.down4 = Down(base_channels*8, base_channels*16 // factor)
+        self.dropout = nn.Dropout2d(p=0.25)
+        
         self.up1 = Up(base_channels * 16, base_channels * 8 // factor, bilinear)
         self.up2 = Up(base_channels * 8, base_channels * 4 // factor, bilinear)
         self.up3 = Up(base_channels * 4, base_channels * 2 // factor, bilinear)
@@ -89,16 +91,35 @@ class UNet(nn.Module):
         self.out_conv = OutConv(base_channels, n_classes)
         
     def forward(self, x):
-        x1 = self.inconv(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x = self.up1(x5, x4)
-        x = self.up2(x, x3)
-        x = self.up3(x, x2)
-        x = self.up4(x, x1)
-        logits = self.out_conv(x)
+        x1 = self.inconv(x)         # [1, 64, 320, 320]
+        x2 = self.down1(x1)         # [1, 128, 160, 160]
+        x3 = self.down2(x2)         # [1, 256, 80, 80]
+        x4 = self.down3(x3)         # [1, 512, 40, 40]
+        x5 = self.down4(x4)         # [1, 512, 20, 20]
+        
+        x = self.dropout(x5)        # dropout层
+        
+        x = self.up1(x5, x4)        # [1, 256, 40, 40]
+        x = self.up2(x, x3)         # [1, 128, 80, 80]
+        x = self.up3(x, x2)         # [1, 64, 160, 160]
+        x = self.up4(x, x1)         # [1, 64, 320, 320]
+        logits = self.out_conv(x)   # [1, c, 320, 320]
         
         return logits
         
+    def elastic_net(self, l1_lambda, l2_lambda):
+        l1_loss = 0
+        l2_loss = 0
+        for param in self.parameters():
+            l1_loss += torch.abs(param).sum()
+            l2_loss += torch.pow(param, 2).sum()
+            
+        return l1_lambda * l1_loss + l2_lambda * l2_loss
+
+
+        
+if __name__ == '__main__':
+    model = UNet(in_channels=3, n_classes=4)
+    x = torch.randn(1,3,320,320)
+    output = model(x)
+    print(model)

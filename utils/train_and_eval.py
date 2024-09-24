@@ -42,7 +42,7 @@ def total_loss(model_output, target, loss_fn):
     return total_loss
   
 
-def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler):
+def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler, elnloss, l1_lambda, l2_lambda):
     """"
     model:             模型
     optimizer:         优化器
@@ -51,6 +51,9 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
     device:            设备
     loss_fn:           损失函数
     scaler:            梯度缩放器
+    elnloss:           是否使用Elastic Net正则化
+    l1_lambda:         l1正则化系数
+    l2_lambda:         l2正则化系数
     """
     
     model.train()
@@ -75,12 +78,24 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
             # 训练 + 计算loss
             # pred_masks：list:(7, pred_mask)
             pred_masks = model(images)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+
             if isinstance(pred_masks, list):
                 train_mean_loss = total_loss(pred_masks, masks, loss_fn)
+                
+                if elnloss:
+                    # 添加Elastic Net正则化
+                    elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
+                    train_mean_loss = train_mean_loss + elastic_net_loss
+              
             else:
                 loss_dict = loss_fn(pred_masks, masks)
                 train_mean_loss = loss_dict['total_loss']
-           
+                
+                if elnloss:
+                    # 添加Elastic Net正则化
+                    elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
+                    train_mean_loss = train_mean_loss + elastic_net_loss
+            
 
         # 反向传播
         scaler.scale(train_mean_loss).backward()
@@ -115,7 +130,7 @@ def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
     if test:
         Metric_list = np.zeros((4, 4))
     else:
-        Metric_list = np.zeros((4, 4))
+        Metric_list = np.zeros((5, 4))
     val_mean_loss = 0.0
     val_OM_loss = 0.0
     val_OP_loss = 0.0
