@@ -8,3 +8,4 @@ SEM_DATA/
 *.png
 *.jpeg
 !u2net.png
+*___pycache__
