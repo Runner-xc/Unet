@@ -44,7 +44,8 @@ def main(args):
     if args.model_name == 'unet':
         model = UNet(
                     in_channels=3,
-                    n_classes=4)
+                    n_classes=4,
+                    p=0)
     elif args.model_name == 'u2net_full':
         model = u2net_full_config()
     elif args.model_name == 'u2net_lite':
@@ -54,7 +55,7 @@ def main(args):
     
     
     # 加载模型权重
-    pretrain_weights = torch.load(args.weights_path, map_location='cpu')
+    pretrain_weights = torch.load(args.weights_path)
     if "model" in pretrain_weights:
         model.load_state_dict(pretrain_weights["model"])
     else:
@@ -97,7 +98,7 @@ def main(args):
     
     if args.single:
         # test 单张
-        path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
+        path = '/mnt/c/VScode/WS-Hub/WS-U2net/Image1 - 003.jpeg'
         img = Image.open(path).convert('RGB')
         img = np.array(img)
         
@@ -113,7 +114,8 @@ def main(args):
         pred_mask_np = pred_mask.numpy()
         pred_img_pil = Image.fromarray(pred_mask_np)
         # 保存图片
-        pred_img_pil.save(f"predict1.png")
+        pred_img_pil.save(f"DC_150_predict.png")
+        print("预测完成!")
         
     else:
         # test 多张
@@ -150,15 +152,16 @@ def main(args):
             pred_img_pil.save(f"{save_path}/pred_{count}.png")
             count += 1
         
+        print("预测完成！")
         
             
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_data.csv')
-    parser.add_argument('--base_size', type=int, default=320)
+    parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_224.csv')
+    parser.add_argument('--base_size', type=int, default=224)
     parser.add_argument('--model_name', type=str, default='unet', help='model name must be unet, u2net_full or u2net_lite')
-    parser.add_argument('--weights_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/results/save_weights/unet/model_ep:58.pth')
+    parser.add_argument('--weights_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/unet/L: FocalLoss--S: CosineAnnealingLR/lr: 0.001-wd: 0.0001/2024-09-27_09:31:58/model_best.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/results/predict/')
     parser.add_argument('--single', type=bool, default=True, help='test one img or not')
     

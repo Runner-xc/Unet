@@ -56,55 +56,54 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 
-detailed_time_str = time.strftime("%Y-%m-%d")
+detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
 
 def main(args):
 
     """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
     
+    # 将args转换为字典
     params = vars(args)
-    """映射参数序号到参数名称"""
+
+    # 映射参数名称到参数
     param_map = {
-        2: 'lr',
-        3: 'l1_lambda',
-        4: 'l2_lambda',
-        5: 'dropout_p',
-        6: 'eval_interval',
-        7: 'batch_size',
-        8: 'optimizer',
-        9: 'small_data',
-        10: 'Tmax',
-        11: 'eta_min',
-        12: 'last_epoch',
-        13: 'save_weights',
-        14: 'scheduler',
-        15: 'model',
-        16: 'loss_fn',
-        17: 'split_flag'
+        'lr'            : '1. lr',
+        'wd'            : '2. wd',
+        'l1_lambda'     : '3. l1_lambda',
+        'l2_lambda'     : '4. l2_lambda',
+        'elnloss'       : '5. elnloss',
+        'dropout_p'     : '6. dropout_p',
+        'model'         : '7. model',
+        'loss_fn'       : '8. loss_fn',
+        'optimizer'     : '9. optimizer',
+        'scheduler'     : '10. scheduler',
+        'Tmax'          : '11. Tmax',
+        'eta_min'       : '12. eta_min',
+        'last_epoch'    : '13. last_epoch',
+        'save_weights'  : '14. save_weights',
+        'batch_size'    : '15. batch_size',
+        'small_data'    : '16. small_data',
+        'eval_interval' : '17. eval_interval',
+        'split_flag'    : '18. split_flag'
     }
 
-    """筛选需要打印的参数"""
-    printed_params = list(param_map.values())
+    # 筛选需要打印的参数
+    printed_params = list(param_map.keys())
     params_dict = {}
-    params_dict['Parameter'] = printed_params
-    params_dict['Value'] = [str(params[p]) for p in printed_params]
-    params_header = ['Parameter', 'Value']
+    params_dict['Parameter'] = [param_map[p] for p in printed_params]
+    params_dict['Value'] = [str(params[p]) for p in printed_params if p in params]
 
-    """打印参数"""
+    # 打印参数
+    params_header = ['Parameter', 'Value']
     print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
     
     """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
     initial_time = time.time()
-    x = input("是否需要修改配置参数：\n 1. 不修改, 继续。 \n 2. lr \n 3. l1_lambda \n 4. l2_lambda \n 5. dropout_p \n \
-6. eval_interval \n 7. batch_size \n 8. optimizer \n 9. small_data \n 10. Tmax \n 11. eta_min \n \
-12. last_epoch \n 13. save_weights \n 14. scheduler \n 15. model \n 16. loss_fn \n 17. split_flag \n\
+    x = input("是否需要修改配置参数：\n 0. 不修改, 继续。 \n\
 请输入需要修改的参数序号（int）： ")
     
-    args, contents = param_modification.param_modification(args, x)
-    save_modification_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/modification_log/{args.model}/{detailed_time_str}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}.md"
-    if not os.path.exists(os.path.dirname(save_modification_path)):
-        os.makedirs(os.path.dirname(save_modification_path))
-    write_experiment_log.write_exp_logs(save_modification_path, contents) 
+    args = param_modification.param_modification(args, x)
+    save_modification_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
         
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
     
@@ -112,10 +111,6 @@ def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     batch_size = args.batch_size
 
-    # 用来保存训练以及验证过程中信息
-    save_scores_path = args.save_scores_path
-    if not os.path.exists(save_scores_path):
-        os.makedirs(save_scores_path)
          
     # 加载模型
     
@@ -129,7 +124,7 @@ def main(args):
         if args.small_data:
             
             # 重新设定dropout rate
-            setattr(args, 'dropout_p', 0.5)
+            setattr(args, 'dropout_p', 0.45)
             model = UNet(
                          in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
         else:
@@ -140,7 +135,7 @@ def main(args):
         if args.small_data:
             
             # 重新设定dropout rate
-            setattr(args, 'dropout_p', 0.5)
+            setattr(args, 'dropout_p', 0.45)
             model = UNet(
                          in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
         else:
@@ -158,22 +153,22 @@ def main(args):
         
     if args.optimizer == 'AdamW':
         optimizer = AdamW(model.parameters(), lr=args.lr, 
-                        #   weight_decay=args.wd
+                          weight_decay=args.wd
                           ) # 会出现梯度爆炸或消失
 
     elif args.optimizer == 'SGD':
         optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9, 
-                        # weight_decay=args.wd
+                        weight_decay=args.wd
                         )
 
     elif args.optimizer == 'RMSprop':
 
         optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8, 
-                            # weight_decay=args.wd
+                            weight_decay=args.wd
                             )
     else:
         optimizer = AdamW(model.parameters(), lr=args.lr, 
-                        #   weight_decay=args.wd
+                          weight_decay=args.wd
                           )
     
     # 调度器
@@ -242,11 +237,14 @@ def main(args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"./results/logs/{args.model}"
+    save_logs_path = f"./results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
-    writer = SummaryWriter(f'{save_logs_path}/{detailed_time_str}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}')
+    if args.elnloss:
+        writer = SummaryWriter(f'{save_logs_path}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}')
+    else:
+        writer = SummaryWriter(f'{save_logs_path}/lr: {args.lr}-wd: {args.wd}/{detailed_time_str}')
     """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
     
     if args.resume:
@@ -260,6 +258,21 @@ def main(args):
         
     
     """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
+            
+    # 记录修改后的参数
+    if args.elnloss:
+        modification_log_name = f"lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
+    else:
+        modification_log_name = f"lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
+    params = vars(args)
+    params_dict['Parameter'] = printed_params
+    params_dict['Value'] = [str(params[p]) for p in printed_params]
+    contents = tabulate(params_dict, headers=params_header, tablefmt="grid")
+
+    mdf = os.path.join(save_modification_path, modification_log_name)
+    if not os.path.exists(os.path.dirname(mdf)):
+        os.mkdir(os.path.dirname(mdf))
+    write_experiment_log.write_exp_logs(mdf, contents) 
     
     """参数列表"""
     params = vars(args)
@@ -447,7 +460,7 @@ def main(args):
                                 epoch) 
                 
                 writer.add_scalars('val/mIoU', 
-                                {'Mean':val_metrics['mIoU']},
+                                {'Mean':val_metrics['mIoU'][3]},
                                 epoch) 
                 # writer.add_scalars('val/F2', 
                 #                 {'Mean':val_metrics['F2_scores'][0], 
@@ -469,7 +482,7 @@ def main(args):
                 #                     'OP': val_metrics['Accuracy_scores'][2],
                 #                     'IOP': val_metrics['Accuracy_scores'][3]},
                 #                 epoch)
-            
+                
             
             # 保存指标
             metrics_table_header = ['Metrics_Name', 'Mean']
@@ -495,26 +508,37 @@ def main(args):
                              for metric_name in metrics_table_left
                             ]
             table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-            loss_s = f"mean_loss : {val_mean_loss:.3f}  🍎🍎🍎\n"
+            train_loss_s = f"train_loss : {train_mean_loss:.3f}  🍎🍎🍎\n"
+            loss_s = f"mean_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info = epoch_s + model_s + lr_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + loss_s + table_s + '\n' + cost_s + time_s + '\n'
+            write_info = epoch_s + model_s + lr_s + wd_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + cost_s + time_s + '\n'
 
             # 打印结果
             print(write_info)
 
             # 保存结果
-            results_file = f"{args.model}/{detailed_time_str}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}.txt"
+            save_scores_path = f'{args.save_scores_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}'
+            
+            if args.elnloss:
+                results_file = f"lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.txt"
+            else:
+                results_file = f"lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.txt"
             file_path = os.path.join(save_scores_path, results_file)
+
+            if not os.path.exists(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
             with open(file_path, "a") as f:
-                f.write(write_info)
-        # loss清零           
-               
+                f.write(write_info)                      
        
         if args.save_weights:
-            # 保存best模型
-            save_weights_path = f"{args.save_weight_path}/{args.model}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}"  # 保存权重路径
             
+            # 保存best模型
+            if args.elnloss:
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+            else:
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/lr: {args.lr}-wd: {args.wd}/{detailed_time_str}"
+                
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
 
@@ -532,18 +556,21 @@ def main(args):
             torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth") 
         
         # 记录验证loss是否出现上升         
-        count_bad_loss = 0
         if val_mean_loss <= current_mean_loss:
             current_mean_loss = val_mean_loss
+            patience = 0
                      
-        elif val_mean_loss > current_mean_loss:
-            count_bad_loss += 1 
+        else:
+            patience += 1 
     
         # 早停判断
-        if count_bad_loss >= 5:
-            print('验证loss异常，训练终止。。。')
+        if patience >= 50:
+            
+            print('恭喜你触发早停！！')
+            
             break
-
+        
+    writer.close()
     total_time = time.time() - initial_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print("====training over. total time: {}".format(total_time_str))
@@ -580,7 +607,7 @@ if __name__ == '__main__':
                         help="'CosineAnnealingLR', 'ReduceLROnPlateau'.")
     
     # 正则化
-    parser.add_argument('--elnloss', type=bool, default=True, help='use elnloss or not')
+    parser.add_argument('--elnloss', type=bool, default=False, help='use elnloss or not')
     parser.add_argument('--l1_lambda', type=float, default=0.001, help="L1 factor")
     parser.add_argument('--l2_lambda', type=float, default=0.001, help=' L2 factor')
     parser.add_argument('--dropout_p', type=float, default=0.0, help='dropout rate')
@@ -589,7 +616,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--resume', type=str, default=None, help="the path of weight for resuming")
     parser.add_argument('--amp', type=bool, default=True, help='use mixed precision training or not')
-    parser.add_argument('--tb', type=bool, default=False, help='use tensorboard or not')   
+    parser.add_argument('--tb', type=bool, default=True, help='use tensorboard or not')   
     parser.add_argument('--split_flag', type=bool, default=False, help='split data or not')
     
     parser.add_argument('--save_weights', type=bool, default=True, help='save weights or not')
@@ -597,17 +624,17 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio', type=float, default=0.8)
     parser.add_argument('--val_ratio', type=float, default=0.1)
-    parser.add_argument('--batch_size', type=int, default=20)
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
-    parser.add_argument('--end_epoch', type=int, default=150, help='ending epoch')
-    parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
-    parser.add_argument('--wd', type=float, default=1e-3, help='weight decay')
+    parser.add_argument('--end_epoch', type=int, default=200, help='ending epoch')
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+    parser.add_argument('--wd', type=float, default=1e-4, help='weight decay')
     
-    parser.add_argument('--eval_interval', type=int, default=10, help='interval for evaluation')
+    parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
     parser.add_argument('--small_data', type=int, default=None, help='number of small data')
-    parser.add_argument('--Tmax', type=int, default=20, help='the numbers of half of T for CosineAnnealingLR')
+    parser.add_argument('--Tmax', type=int, default=200, help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min', type=float, default=0.0001, help='minimum of lr for CosineAnnealingLR')
-    parser.add_argument('--last_epoch', type=int, default=5, help='start epoch of lr decay for CosineAnnealingLR')
+    parser.add_argument('--last_epoch', type=int, default=0, help='start epoch of lr decay for CosineAnnealingLR')
 
     args = parser.parse_args()
     main(args)

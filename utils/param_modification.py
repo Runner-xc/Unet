@@ -3,13 +3,13 @@ import argparse
 def modify_param(args, modifications, x):
     param_name = modifications[str(x)]
     
-    if param_name in ['lr', 'l1_lambda', 'l2_lambda', 'dropout_p', 'eta_min']:
+    if param_name in ['lr', 'wd', 'l1_lambda', 'l2_lambda', 'dropout_p', 'eta_min']:
         value = float(input(f"请输入你想修改的 {param_name} 值（float）："))
         
     elif param_name in ['eval_interval', 'batch_size', 'Tmax', 'last_epoch', 'small_data']:
         value = int(input(f"请输入你想修改的 {param_name} 值（int）："))
         
-    elif param_name in ['save_weights', 'split_flag']:
+    elif param_name in ['save_weights','elnloss', 'split_flag']:
         value = bool(input(f"请输入你想修改的 {param_name} 值（bool）："))
         
     elif param_name in ['optimizer', 'scheduler', 'model', 'loss_fn']:
@@ -21,22 +21,24 @@ def param_modification(args, x):
     x: 要修改的参数序号
     """
     modifications = {
-        '2': 'lr',
+        '1': 'lr',
+        '2': 'wd',
         '3': 'l1_lambda',
         '4': 'l2_lambda',
-        '5': 'dropout_p',
-        '6': 'eval_interval',
-        '7': 'batch_size',
-        '8': 'optimizer',
-        '9': 'small_data',
-        '10': 'Tmax',
-        '11': 'eta_min',
-        '12': 'last_epoch',
-        '13': 'save_weights',
-        '14': 'scheduler',
-        '15': 'model',
-        '16': 'loss_fn',
-        '17': 'split_flag'
+        '5': 'elnloss',
+        '6': 'dropout_p',
+        '7': 'model',
+        '8': 'loss_fn',
+        '9': 'optimizer',
+        '10': 'scheduler',
+        '11': 'Tmax',
+        '12': 'eta_min',
+        '13': 'last_epoch',
+        '14': 'save_weights',
+        '15': 'batch_size',
+        '16': 'small_data',
+        '17': 'eval_interval',
+        '18': 'split_flag'
     }   
     
     # 初始化参数
@@ -60,22 +62,23 @@ def param_modification(args, x):
     # 检查并修改参数
     
     while True:
-        if x == '1':
+        if x == '0':
             break
         elif str(x) in modifications:
             modify_param(args, modifications, x)
-            x = input("如需继续修改，请输入参数序号（1-16），输入 '1' 退出.")
+            x = input("如需继续修改，请输入参数序号（1-16），输入 '0' 退出.")
         else:
-            print("无效的输入，请重新输入。")
+            x = input("无效的输入，请重新输入:")
+
 
     # 构建参数内容字符串
-    content = f"lr:{c_lr}\nl1_lambda:{c_l1_lambda}\nl2_lambda:{c_l2_lambda}\n\
-dropout_p:{c_dropout_p}\neval_interval:{c_eval_interval}\nbatch_size:{c_batch_size}\n\
-optimizer:{c_optimizer}\nsmall_data:{c_small_data}\nTmax:{c_Tmax}\neta_min:{c_eta_min}\n\
-last_epoch:{c_last_epoch}\nsave_weights:{c_save_weights}\nscheduler:{c_scheduler}\n\
-model:{c_model}\nloss_fn:{c_loss_fn}\nsplit_flag:{c_split_flag}"
+#     content = f"lr:{c_lr}\nl1_lambda:{c_l1_lambda}\nl2_lambda:{c_l2_lambda}\n\
+# dropout_p:{c_dropout_p}\neval_interval:{c_eval_interval}\nbatch_size:{c_batch_size}\n\
+# optimizer:{c_optimizer}\nsmall_data:{c_small_data}\nTmax:{c_Tmax}\neta_min:{c_eta_min}\n\
+# last_epoch:{c_last_epoch}\nsave_weights:{c_save_weights}\nscheduler:{c_scheduler}\n\
+# model:{c_model}\nloss_fn:{c_loss_fn}\nsplit_flag:{c_split_flag}"
     
-    return args, content
+    return args
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")

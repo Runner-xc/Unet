@@ -123,7 +123,7 @@ class Focal_Loss():
     γ : 聚焦因子,用于控制损失的敏感度
     α : 平衡正负样本权重
     """
-    def __init__(self,alpha=0.8,gamma=2):
+    def __init__(self,alpha=0.25, gamma=2):
         self.gamma=gamma
         self.alpha=alpha
         self.class_names = [
