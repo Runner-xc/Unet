@@ -103,9 +103,9 @@ class DL_UNet(nn.Module):
         x1 = self.inconv(x)         # [1, 32, 256, 256]
         x2 = self.down1(x1)         # [1, 64, 128, 128]
         x2 = self.dropout(x2)       # dropout层
-        x3 = self.down2(x2)         # [1, 256, 80, 80]
+        x3 = self.down2(x2)         # [1, 128, 80, 80]
         x3 = self.dropout(x3)       # dropout层
-        x4 = self.down3(x3)         # [1, 512, 40, 40]
+        x4 = self.down3(x3)         # [1, 256, 40, 40]
         x4 = self.dropout(x4)       # dropout层
         x5 = self.down4(x4)         # [1, 512, 20, 20]
            
