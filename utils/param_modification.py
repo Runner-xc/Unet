@@ -12,7 +12,7 @@ def modify_param(args, modifications, x):
     elif param_name in ['save_weights','elnloss', 'split_flag']:
         value = bool(input(f"请输入你想修改的 {param_name} 值（bool）："))
         
-    elif param_name in ['optimizer', 'scheduler', 'model', 'loss_fn']:
+    elif param_name in ['optimizer', 'scheduler', 'model', 'loss_fn', 'resume']:
         value = input(f"请输入你想修改的 {param_name} 名字：")
     setattr(args, param_name, value)
     
@@ -38,7 +38,8 @@ def param_modification(args, x):
         '15': 'batch_size',
         '16': 'small_data',
         '17': 'eval_interval',
-        '18': 'split_flag'
+        '18': 'split_flag',
+        '19': 'resume'
     }   
     
     # 初始化参数

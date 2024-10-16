@@ -7,6 +7,7 @@ import argparse
 import time
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet
+from model.DL_unet import DL_UNet
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -50,8 +51,13 @@ def main(args):
         model = u2net_full_config()
     elif args.model_name == 'u2net_lite':
         model = u2net_lite_config()
+    elif args.model_name == 'DL_unet':
+        model = DL_UNet(
+                    in_channels=3,
+                    n_classes=4,
+                    p=0)
     else:
-        raise ValueError(f"model name must be unet, u2net_full or u2net_lite")
+        raise ValueError(f"model name error")
     
     
     # 加载模型权重
@@ -114,7 +120,9 @@ def main(args):
         pred_mask_np = pred_mask.numpy()
         pred_img_pil = Image.fromarray(pred_mask_np)
         # 保存图片
-        pred_img_pil.save(f"DC_150_predict.png")
+        if not os.path.exists("predict/"):
+            os.mkdir("predict/")
+        pred_img_pil.save(f"predict/DLunet_FC_cos_adamw_lr:5e-4_wd:1e-5.png")
         print("预测完成!")
         
     else:
@@ -160,8 +168,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_224.csv')
     parser.add_argument('--base_size', type=int, default=224)
-    parser.add_argument('--model_name', type=str, default='unet', help='model name must be unet, u2net_full or u2net_lite')
-    parser.add_argument('--weights_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/unet/L: FocalLoss--S: CosineAnnealingLR/lr: 0.001-wd: 0.0001/2024-09-27_09:31:58/model_best.pth')
+    parser.add_argument('--model_name', type=str, default='DL_unet', help='model name must be unet, u2net_full or u2net_lite')
+    parser.add_argument('--weights_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/DL_unet/L: FocalLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0005-wd: 1e-05/2024-10-08_15:20:33/model_best.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/results/predict/')
     parser.add_argument('--single', type=bool, default=True, help='test one img or not')
     

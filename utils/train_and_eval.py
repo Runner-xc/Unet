@@ -128,9 +128,9 @@ def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
     """
     model.eval()
     if test:
-        Metric_list = np.zeros((4, 4))
+        Metric_list = np.zeros((6, 4))
     else:
-        Metric_list = np.zeros((5, 4))
+        Metric_list = np.zeros((6, 4))
     val_mean_loss = 0.0
     val_OM_loss = 0.0
     val_OP_loss = 0.0

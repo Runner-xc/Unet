@@ -10,6 +10,7 @@ from torch.optim import Adam, SGD, RMSprop, AdamW
 import time
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet
+from model.DL_unet import DL_UNet
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -29,9 +30,9 @@ class SODPresetTrain:
                  hflip_prob=0.5, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         self.transforms = T.Compose([
             T.ToTensor(),
-            T.Resize(base_size),
-            T.RandomCrop(crop_size),
-            T.RandomHorizontalFlip(hflip_prob),
+            # T.Resize(base_size),
+            # T.RandomCrop(crop_size),
+            # T.RandomHorizontalFlip(hflip_prob),
             T.Normalize(mean=mean, std=std)
         ])
 
@@ -43,7 +44,7 @@ class SODPresetEval:
     def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         self.transforms = T.Compose([
             T.ToTensor(),
-            T.Resize(base_size),
+            # T.Resize(base_size),
             T.Normalize(mean=mean, std=std),
         ])
 
@@ -84,7 +85,8 @@ def main(args):
         'batch_size'    : '15. batch_size',
         'small_data'    : '16. small_data',
         'eval_interval' : '17. eval_interval',
-        'split_flag'    : '18. split_flag'
+        'split_flag'    : '18. split_flag',
+        'resume'        : '19. resume'
     }
 
     # 筛选需要打印的参数
@@ -114,12 +116,16 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet"], \
-        f"model must be 'u2net_full' or 'u2net_lite' or 'unet', but got {args.model}"
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "DL_unet"], \
+        f"model must be 'u2net_full' or 'u2net_lite' or 'unet' or 'DL_unet', but got {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
     elif args.model =="u2net_lite":
         model = u2net_lite_config()
+        
+    elif args.model == "DL_unet":
+        model = DL_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+        
     elif args.model == "unet":
         if args.small_data:
             
@@ -207,7 +213,7 @@ def main(args):
         scheduler = ReduceLROnPlateau(optimizer, 
                                       mode='min', 
                                       factor=0.1, 
-                                      patience=10, 
+                                      patience=5, 
                                       threshold=1e-4, 
                                       threshold_mode='rel', 
                                       cooldown=0, 
@@ -237,14 +243,14 @@ def main(args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"./results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_logs_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
     if args.elnloss:
-        writer = SummaryWriter(f'{save_logs_path}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}')
+        writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}')
     else:
-        writer = SummaryWriter(f'{save_logs_path}/lr: {args.lr}-wd: {args.wd}/{detailed_time_str}')
+        writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}')
     """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
     
     if args.resume:
@@ -261,9 +267,9 @@ def main(args):
             
     # 记录修改后的参数
     if args.elnloss:
-        modification_log_name = f"lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
+        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
     else:
-        modification_log_name = f"lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
+        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
     params = vars(args)
     params_dict['Parameter'] = printed_params
     params_dict['Value'] = [str(params[p]) for p in printed_params]
@@ -271,7 +277,7 @@ def main(args):
 
     mdf = os.path.join(save_modification_path, modification_log_name)
     if not os.path.exists(os.path.dirname(mdf)):
-        os.mkdir(os.path.dirname(mdf))
+        os.makedirs(os.path.dirname(mdf))
     write_experiment_log.write_exp_logs(mdf, contents) 
     
     """参数列表"""
@@ -317,10 +323,10 @@ def main(args):
 
     # 读取数据集
     train_datasets = SEM_DATA(train_datasets, 
-                            transforms=SODPresetTrain((320, 320), crop_size=320))
+                            transforms=SODPresetTrain((256, 256), crop_size=256))
     
     val_datasets = SEM_DATA(val_datasets, 
-                            transforms=SODPresetEval((320, 320)))
+                            transforms=SODPresetEval((256, 256)))
     
     num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
     train_dataloader = DataLoader(train_datasets, 
@@ -338,12 +344,14 @@ def main(args):
     """——————————————————————————————————————————————训练 验证——————————————————————————————————————————————"""
     start_epoch = args.start_epoch
     end_epoch = args.end_epoch
-
-
   
     best_mean_loss, current_miou = float('inf'), 0.0
     current_mean_loss = float('inf')
     
+    if args.resume:
+        start_epoch = checkpoint['epoch']
+        print(f"Resume from epoch: {start_epoch}")
+        
     for epoch in range(start_epoch, end_epoch):
         
         print(f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈")
@@ -424,6 +432,7 @@ def main(args):
             val_metrics["Dice"] = Metric_list[2]
             val_metrics["F1_scores"] = Metric_list[3]
             val_metrics["mIoU"] = Metric_list[4]
+            val_metrics["Accuracy"] = Metric_list[5]
             # 验证====结束时间
             end_time = time.time()
             val_cost_time = end_time - start_time
@@ -439,58 +448,65 @@ def main(args):
             # 记录日志
             tb = args.tb
             if tb:
-                writer.add_scalars('val/Loss', 
-                                {'Mean':val_mean_loss},
+                writer.add_scalars('Loss', 
+                                {'val':val_mean_loss,
+                                 'train':train_mean_loss},
                                 epoch)
                 
                 writer.add_scalars('val/Dice',
                                 {'Mean':val_metrics['Dice'][3],
+                                 'OM' : val_metrics['Dice'][0],
+                                 'OP' : val_metrics['Dice'][1],
+                                 'IOP' : val_metrics['Dice'][2]
                                 },
                                 epoch)
                 
                 writer.add_scalars('val/Precision', 
-                                {'Mean':val_metrics['Precision'][3]},
+                                {'Mean':val_metrics['Precision'][3],
+                                 'OM' : val_metrics['Precision'][0],
+                                 'OP' : val_metrics['Precision'][1],
+                                 'IOP' : val_metrics['Precision'][2]},
                                 epoch)
                 
                 writer.add_scalars('val/Recall', 
-                                {'Mean':val_metrics['Recall'][3]},
+                                {'Mean':val_metrics['Recall'][3],
+                                 'OM' : val_metrics['Recall'][0],
+                                 'OP' : val_metrics['Recall'][1],
+                                 'IOP' : val_metrics['Recall'][2]},
                                 epoch)
                 writer.add_scalars('val/F1', 
-                                {'Mean':val_metrics['F1_scores'][3]},
+                                {'Mean':val_metrics['F1_scores'][3],
+                                 'OM' : val_metrics['F1_scores'][0],
+                                 'OP' : val_metrics['F1_scores'][1],
+                                 'IOP' : val_metrics['F1_scores'][2]},
                                 epoch) 
                 
                 writer.add_scalars('val/mIoU', 
-                                {'Mean':val_metrics['mIoU'][3]},
-                                epoch) 
-                # writer.add_scalars('val/F2', 
-                #                 {'Mean':val_metrics['F2_scores'][0], 
-                #                     'OM': val_metrics['F2_scores'][1], 
-                #                     'OP': val_metrics['F2_scores'][2], 
-                #                     'IOP': val_metrics['F2_scores'][3]},
-                #                 epoch)  
-
-                # writer.add_scalars('val/Jaccard_index',
-                #                 {'Mean':val_metrics['Jaccard_scores'][0],
-                #                     'OM': val_metrics['Jaccard_scores'][1],
-                #                     'OP': val_metrics['Jaccard_scores'][2],
-                #                     'IOP': val_metrics['Jaccard_scores'][3]},
-                #                 epoch)   
-
-                # writer.add_scalars('val/Accuracy',
-                #                 {'Mean':val_metrics['Accuracy_scores'][0],
-                #                     'OM': val_metrics['Accuracy_scores'][1],
-                #                     'OP': val_metrics['Accuracy_scores'][2],
-                #                     'IOP': val_metrics['Accuracy_scores'][3]},
-                #                 epoch)
+                                {'Mean':val_metrics['mIoU'][3],
+                                 'OM' : val_metrics['mIoU'][0],
+                                 'OP' : val_metrics['mIoU'][1],
+                                 'IOP' : val_metrics['mIoU'][2]},
+                                epoch)
+                writer.add_scalars('val/Accuracy', 
+                                {'Mean':val_metrics['Accuracy'][3],
+                                 'OM' : val_metrics['Accuracy'][0],
+                                 'OP' : val_metrics['Accuracy'][1],
+                                 'IOP' : val_metrics['Accuracy'][2]},
+                                epoch)
+                writer.add_text('val/Metrics', 
+                                f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
+                                f"model: {args.model}, loss_fn: {args.loss_fn}, scheduler: {args.scheduler}"
+                                )
                 
             
             # 保存指标
-            metrics_table_header = ['Metrics_Name', 'Mean']
-            metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU']
+            metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
+            metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
             epoch_s = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
             model_s = f"model : {args.model} \n"
             lr_s = f"lr : {args.lr} \n"
             wd_s = f"wd : {args.wd} \n"  #####
+            dropout_s = f"dropout : {args.dropout} \n"
             l1_lambda = f"l1_lambda : {args.l1_lambda} \n"
             l2_lambda = f"l2_lambda : {args.l2_lambda} \n"
             scheduler_s = f"scheduler : {args.scheduler} \n"
@@ -501,9 +517,9 @@ def main(args):
             metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
             metrics_table = [[metric_name,
                               metrics_dict[metric_name][-1],
-                            #   metrics_dict[metric_name][0],
-                            #   metrics_dict[metric_name][1],
-                            #   metrics_dict[metric_name][2]
+                              metrics_dict[metric_name][0],
+                              metrics_dict[metric_name][1],
+                              metrics_dict[metric_name][2]
                             ]
                              for metric_name in metrics_table_left
                             ]
@@ -512,7 +528,7 @@ def main(args):
             loss_s = f"mean_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info = epoch_s + model_s + lr_s + wd_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + cost_s + time_s + '\n'
+            write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + cost_s + time_s + '\n'
 
             # 打印结果
             print(write_info)
@@ -521,9 +537,9 @@ def main(args):
             save_scores_path = f'{args.save_scores_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}'
             
             if args.elnloss:
-                results_file = f"lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.txt"
+                results_file = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.txt"
             else:
-                results_file = f"lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.txt"
+                results_file = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.txt"
             file_path = os.path.join(save_scores_path, results_file)
 
             if not os.path.exists(os.path.dirname(file_path)):
@@ -535,9 +551,9 @@ def main(args):
             
             # 保存best模型
             if args.elnloss:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
             else:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/lr: {args.lr}-wd: {args.wd}/{detailed_time_str}"
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}"
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
@@ -583,7 +599,7 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path', type=str, 
-                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_224.csv", 
+                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_256_a50_c80.csv", 
                         help="path to csv dataset")
     
     parser.add_argument('--save_scores_path', type=str, 
@@ -622,18 +638,18 @@ if __name__ == '__main__':
     parser.add_argument('--save_weights', type=bool, default=True, help='save weights or not')
     
     # 训练参数
-    parser.add_argument('--train_ratio', type=float, default=0.8)
+    parser.add_argument('--train_ratio', type=float, default=0.7)
     parser.add_argument('--val_ratio', type=float, default=0.1)
-    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--batch_size', type=int, default=12)
     parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
-    parser.add_argument('--end_epoch', type=int, default=200, help='ending epoch')
-    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+    parser.add_argument('--end_epoch', type=int, default=150, help='ending epoch')
+    parser.add_argument('--lr', type=float, default=3e-4, help='learning rate')
     parser.add_argument('--wd', type=float, default=1e-4, help='weight decay')
     
     parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
     parser.add_argument('--small_data', type=int, default=None, help='number of small data')
     parser.add_argument('--Tmax', type=int, default=200, help='the numbers of half of T for CosineAnnealingLR')
-    parser.add_argument('--eta_min', type=float, default=0.0001, help='minimum of lr for CosineAnnealingLR')
+    parser.add_argument('--eta_min', type=float, default=1e-8, help='minimum of lr for CosineAnnealingLR')
     parser.add_argument('--last_epoch', type=int, default=0, help='start epoch of lr decay for CosineAnnealingLR')
 
     args = parser.parse_args()

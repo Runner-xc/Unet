@@ -4,6 +4,8 @@ unet
 import os
 import torch
 from unet import UNet
+from u2net import u2net_full_config
+from DL_unet import DL_UNet
 import torch.nn.functional as F
 from PIL import Image
 import numpy as np
@@ -45,12 +47,16 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/unet/L: FocalLoss--S: CosineAnnealingLR/lr: 0.001-wd: 0.0001/2024-09-27_09:31:58/model_best.pth'
+weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/unet/L: FocalLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0005-wd: 0.0001/2024-10-16_10:45:25/model_best.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
 # 创建模型实例
 model = UNet(in_channels=3, n_classes=4, p=0.25)
+
+# model = DL_UNet(in_channels=3, n_classes=4, p=0.25)
+
+# model = u2net_full_config()
 
 # 加载模型权重
 model.load_state_dict(state_dict)
@@ -95,7 +101,11 @@ IP_mask_uint8 = 255 * np.uint8(IP_mask == IP_category)
 IP_mask_float = np.float32(IP_mask == IP_category)
 
 # 指定目标层
+# target_layers = [model.up4.conv]
+
 target_layers = [model.up4.conv]
+
+# target_layers = [model.out_conv]
 
 # OM
 OM_targets = [SemanticSegmentationTarget(OM_category, OM_mask_float)]
@@ -123,16 +133,17 @@ with GradCAM(model=model,
     grayscale_cam = cam(input_tensor=input_tensor,
                         targets=IP_targets)[0, :]
     IP_cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
-    
+
+name = "Unet_FC_Cos_lr:5e-4_wd_1e-4"    
 # 保存图片
 save_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img/"
 OM_cam_img = Image.fromarray(OM_cam_image)
-OM_cam_img.save(os.path.join(save_path, "OM_cam_img.jpg"))
+OM_cam_img.save(os.path.join(save_path, f"{name}_OM.jpg"))
 
 OP_cam_img = Image.fromarray(OP_cam_image)
-OP_cam_img.save(os.path.join(save_path, "OP_cam_img.jpg"))
+OP_cam_img.save(os.path.join(save_path, f"{name}_OP.jpg"))
 
 IP_cam_img = Image.fromarray(IP_cam_image)
-IP_cam_img.save(os.path.join(save_path, "IP_cam_img.jpg"))
+IP_cam_img.save(os.path.join(save_path, f"{name}_IOP.jpg"))
 
 print("映射完成！！")

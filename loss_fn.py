@@ -147,7 +147,6 @@ class Focal_Loss():
         num_classes = logits.shape[1]
         
         # 计算loss
-        target = targets
         targets = targets.to(torch.int64)
         targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
         ce = nn.CrossEntropyLoss(label_smoothing=1e-7, reduction='none')    # 不进行缩减会返回（batch, h, w）的loss值

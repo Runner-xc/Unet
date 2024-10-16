@@ -64,7 +64,7 @@ class Evaluate_Metric(nn.Module):
         # 计算总体召回率
         TP, FN, _, _ = self.compute_confusion_matrix(img_pred, img_mask)
         recall = TP / (TP + FN + self.smooth)
-        recall = recall.sum(dim=0) / 4
+        recall = recall.mean(dim=0)
         
         OM_rc = recall[1].item()
         OP_rc = recall[2].item()
@@ -87,7 +87,7 @@ class Evaluate_Metric(nn.Module):
         # 计算总体精准率
         TP, _, FP, _ = self.compute_confusion_matrix(img_pred, img_mask)
         precision = TP / (TP + FP + self.smooth)
-        precision = precision.sum(dim=0) / 4
+        precision = precision.mean(dim=0)
         
         OM_pc = precision[1].item()
         OP_pc = precision[2].item()
@@ -168,6 +168,27 @@ class Evaluate_Metric(nn.Module):
         mIoU = mIoU.item()
         
         return OM_iou, OP_iou, IOP_iou, mIoU
+    
+    def accuracy(self, logits, targets):
+        """
+        accuracy: 准确率
+        """
+        # 预处理
+        img_pred = torch.argmax(logits, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
+        img_pred = F.one_hot(img_pred, num_classes=4).permute(0, 3, 1, 2).float() 
+        img_mask = F.one_hot(targets, num_classes=4).permute(0, 3, 1, 2).float() 
+        
+        # 计算总体精准率
+        TP, FN, FP, TN = self.compute_confusion_matrix(img_pred, img_mask)
+        
+        accuracy = (TP + TN) / (TP + TN + FN + FP + self.smooth)
+        accuracy = accuracy.mean(dim=0)
+        OM_acc = accuracy[1].item()
+        OP_acc = accuracy[2].item()
+        IOP_acc = accuracy[3].item()
+        accuracy = accuracy.mean().item()
+        
+        return OM_acc, OP_acc, IOP_acc, accuracy
 
     def update(self, img_pred, img_mask):
         """
@@ -178,8 +199,9 @@ class Evaluate_Metric(nn.Module):
         dice = self.dice_coefficient(img_pred, img_mask)
         f1_score = self.f1_score(img_pred, img_mask)
         mIoU = self.mIoU(img_pred, img_mask)
+        accuracy = self.accuracy(img_pred, img_mask)
         
-        metrics = [recall, precision, dice, f1_score, mIoU]
+        metrics = [recall, precision, dice, f1_score, mIoU, accuracy]
         metrics = np.stack(metrics, axis=0)
         metrics = np.nan_to_num(metrics)
 

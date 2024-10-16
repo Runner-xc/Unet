@@ -1,7 +1,8 @@
 datasets/
 SEM_DATA/
-../results/
-./results/
+results/
+cam_img/
+predict/
 
 *.onnx
 *.jpg

@@ -32,13 +32,13 @@
 - 5. 增加参数配置脚本
 
 ## 参数实验
-| 模型 | 数据集大小 | epoch | lr | wd | l1_λ | l2_λ | loss_fn | scheduler | train_loss | val_loss |
-| :-----: | :---: | :---:| :---: | :---: | :---: | :---: | :---: | :--- | :---: | :---: | 
-| U-Net | 3000 | 150 | 0.0005 | 0 | 0.005 | 0 | DiceLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=5 | 收敛 | 很不稳定 |
-| U-Net | 3000 | 150 | 0.0005 | 0 | 0.005 | 0 | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=5 | 不稳定 | 不稳定 |
-| U-Net | 2000 | 150 | 0.0001 | 1e-5 | 0 | 0 | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=0 | 收敛 | 过拟合 |
-| U-Net | 2000 | 150 | 0.0001 | 1e-4 | 0 | 0 | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=0 | 收敛 | 过拟合 |
-| U-Net | 4000 | 150 | 0.001 | 1e-4 | 0 | 0 | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=0 | 下降，触发早停（15） | 持续下降 |
-| U-Net | 4000 | 150 | 0.001 | 1e-4 | 0 | 0 | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=0 |  |  |
-
+| 模型 | 数据集大小 | epoch | lr | wd | l1_λ | l2_λ | optim | loss_fn | scheduler | train_loss | val_loss |
+| :-----: | :---: | :---:| :---: | :---:  | :---: | :---: | :---: | :---: | :--- | :---: | :---: | 
+| U-Net | 3000 | 150 | 0.0005 | 0 | 0.005 | 0 | AdamW | DiceLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=5 | 收敛 | 很不稳定 |
+| U-Net | 3000 | 150 | 0.0005 | 0 | 0.005 | 0 | AdamW | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=5 | 不稳定 | 不稳定 |
+| U-Net | 2000 | 150 | 0.0001 | 1e-5 | 0 | 0 | AdamW | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=0 | 收敛 | 过拟合 |
+| U-Net | 2000 | 150 | 0.0001 | 1e-4 | 0 | 0 | AdamW | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=0 | 收敛 | 过拟合 |
+| U-Net | 4000 | 150 | 0.001 | 1e-4 | 0 | 0 | AdamW | FocalLoss | <li>名称：CosineAnnealingLR<br><li>参数：t_max=20, eta_min=0.0001, last_epoch=0 | 下降，触发早停（15） | 持续下降 |
+| U-Net | 12000 | 150 | 0.001 | 1e-4 | 0 | 0 | SGD<br>动量：0.9；wd：1e-4 | FocalLoss | <li>名称：ReduceLROnPlateau<br><li>参数：默认 | 收敛 | 收敛（135轮早停） |
+| U-Net | 12000 | 150 | 0.001 | 1e-4 | 0 | 0 | SGD<br>动量：0.9；wd：1e-4 | FocalLoss | <li>名称：ReduceLROnPlateau<br><li>参数：默认 |  |  |
 
