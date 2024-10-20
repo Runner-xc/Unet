@@ -71,6 +71,9 @@ class SEM_DATA(Dataset):
         img = Image.open(img_path).convert('RGB')
         mask = Image.open(mask_path).convert('L')   # 将mask转换为灰度图像, 不然会多一个维度
         img_array = np.array(img)
+        # # 归一化图片
+        img_array = img_array / 255.0 
+        img_array = img_array.astype(np.float32)
         mask_array = np.array(mask)
         
         # img = cv2.imread(img_path, cv2.IMREAD_COLOR)
