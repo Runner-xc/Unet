@@ -82,19 +82,19 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
             if isinstance(pred_masks, list):
                 train_mean_loss = total_loss(pred_masks, masks, loss_fn)
                 
-                if elnloss:
-                    # 添加Elastic Net正则化
-                    elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
-                    train_mean_loss = train_mean_loss + elastic_net_loss
+                # if elnloss:
+                #     # 添加Elastic Net正则化
+                #     elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
+                #     train_mean_loss = train_mean_loss + elastic_net_loss
               
             else:
                 loss_dict = loss_fn(pred_masks, masks)
                 train_mean_loss = loss_dict['total_loss']
                 
-                if elnloss:
-                    # 添加Elastic Net正则化
-                    elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
-                    train_mean_loss = train_mean_loss + elastic_net_loss
+                # if elnloss:
+                #     # 添加Elastic Net正则化
+                #     elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
+                #     train_mean_loss = train_mean_loss + elastic_net_loss
             
 
         # 反向传播
@@ -152,11 +152,11 @@ def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
 
             # 累加损失   # TODO : 2
             val_mean_loss += loss_dict['total_loss'].item()
-            # val_OM_loss += loss_dict['Organic matter'].sum().item()
-            # val_OP_loss += loss_dict['Organic pores'].sum().item()
-            # val_IOP_loss += loss_dict['Inorganic pores'].sum().item()
+            val_OM_loss += loss_dict['Organic matter'].item()
+            val_OP_loss += loss_dict['Organic pores'].item()
+            val_IOP_loss += loss_dict['Inorganic pores'].item()
     
     Metric_list /= len(val_dataloader)
 
     # TODO : 3
-    return val_mean_loss, Metric_list
+    return val_mean_loss,val_OM_loss,val_OP_loss,val_IOP_loss, Metric_list

@@ -11,6 +11,7 @@ import time
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet
 from model.DL_unet import DL_UNet
+from model.SED_unet import SED_UNet
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -81,7 +82,7 @@ def main(args):
         'Tmax'          : '11. Tmax',
         'eta_min'       : '12. eta_min',
         'last_epoch'    : '13. last_epoch',
-        'save_weights'  : '14. save_weights',
+        'save_flag'     : '14. save_flag',
         'batch_size'    : '15. batch_size',
         'small_data'    : '16. small_data',
         'eval_interval' : '17. eval_interval',
@@ -101,12 +102,13 @@ def main(args):
     
     """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
     initial_time = time.time()
-    x = input("是否需要修改配置参数：\n 0. 不修改, 继续。 \n\
+    if args.change_params:    
+        x = input("是否需要修改配置参数：\n 0. 不修改, 继续。 \n\
 请输入需要修改的参数序号（int）： ")
-    
-    args = param_modification.param_modification(args, x)
-    save_modification_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
         
+        args = param_modification.param_modification(args, x)
+    save_modification_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+            
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
     
     # 定义设备
@@ -116,7 +118,7 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "DL_unet"], \
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "DL_unet", "SED_unet"], \
         f"model must be 'u2net_full' or 'u2net_lite' or 'unet' or 'DL_unet', but got {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
@@ -125,6 +127,10 @@ def main(args):
         
     elif args.model == "DL_unet":
         model = DL_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    
+    # SED_UNet    
+    elif args.model == "SED_unet":
+        model = SED_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
         
     elif args.model == "unet":
         if args.small_data:
@@ -132,21 +138,13 @@ def main(args):
             # 重新设定dropout rate
             setattr(args, 'dropout_p', 0.45)
             model = UNet(
-                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
+                         in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
         else:
             model = UNet(
-                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
+                         in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
  
     else:
-        if args.small_data:
-            
-            # 重新设定dropout rate
-            setattr(args, 'dropout_p', 0.45)
-            model = UNet(
-                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
-        else:
-            model = UNet(
-                         in_channels=3, n_classes=4, base_channels=64, bilinear=True, p=args.dropout_p)
+        raise ValueError(f"Invalid model name: {args.model}")
     
     # 初始化模型
     kaiming_initial(model)
@@ -247,10 +245,11 @@ def main(args):
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
-    if args.elnloss:
-        writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}')
-    else:
-        writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}')
+    if args.save_flag:
+        if args.elnloss:
+            writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}')
+        else:
+            writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}')
     """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
     
     if args.resume:
@@ -278,7 +277,8 @@ def main(args):
     mdf = os.path.join(save_modification_path, modification_log_name)
     if not os.path.exists(os.path.dirname(mdf)):
         os.makedirs(os.path.dirname(mdf))
-    write_experiment_log.write_exp_logs(mdf, contents) 
+    if args.save_flag:
+        write_experiment_log.write_exp_logs(mdf, contents) 
     
     """参数列表"""
     params = vars(args)
@@ -384,13 +384,14 @@ def main(args):
         train_mean_loss = total_loss / len(train_dataloader)
 
         # 记录日志
-        writer.add_scalars('train/Loss', 
-                           {'Mean':train_mean_loss, 
-                            #  'OM': train_OM_loss, 
-                            #  'OP': train_OP_loss, 
-                            #  'IOP': train_IOP_loss
-                            },
-                           epoch)
+        # if args.save_flag:         
+        #     writer.add_scalars('train/Loss', 
+        #                     {'Mean':train_mean_loss, 
+        #                         #  'OM': train_OM_loss, 
+        #                         #  'OP': train_OP_loss, 
+        #                         #  'IOP': train_IOP_loss
+        #                         },
+        #                     epoch)
 
         # 结束时间
         end_time = time.time()
@@ -412,13 +413,13 @@ def main(args):
             # 记录验证开始时间
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
-            val_mean_loss, Metric_list = evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
+            mean_loss,OM_loss,OP_loss,IOP_loss, Metric_list = evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
 
             # 求平均
-            # val_OM_loss = val_OM_loss / len(val_dataloader)
-            # val_OP_loss = val_OP_loss / len(val_dataloader)
-            # val_IOP_loss = val_IOP_loss / len(val_dataloader)
-            val_mean_loss = val_mean_loss / len(val_dataloader)
+            val_OM_loss = OM_loss / len(val_dataloader)
+            val_OP_loss = OP_loss / len(val_dataloader)
+            val_IOP_loss = IOP_loss / len(val_dataloader)
+            val_mean_loss = mean_loss / len(val_dataloader)
             
             
             # 更新调度器
@@ -439,9 +440,9 @@ def main(args):
 
             # 打印结果
             print(
-                #   f"val_OM_loss: {val_OM_loss:.3f}\n"
-                #   f"val_OP_loss: {val_OP_loss:.3f}\n"
-                #   f"val_IOP_loss: {val_IOP_loss:.3f}\n"
+                  f"val_OM_loss: {val_OM_loss:.3f}\n"
+                  f"val_OP_loss: {val_OP_loss:.3f}\n"
+                  f"val_IOP_loss: {val_IOP_loss:.3f}\n"
                   f"val_mean_loss: {val_mean_loss:.3f}\n"
                   f"val_cost_time: {val_cost_time:.2f}s\n\n")
             
@@ -451,6 +452,14 @@ def main(args):
                 writer.add_scalars('Loss', 
                                 {'val':val_mean_loss,
                                  'train':train_mean_loss},
+                                epoch)
+                
+                writer.add_scalars('val/Loss',
+                                {'Mean':val_mean_loss,
+                                 'OM' : val_OM_loss,
+                                 'OP' : val_OP_loss,
+                                 'IOP' : val_IOP_loss
+                                },
                                 epoch)
                 
                 writer.add_scalars('val/Dice',
@@ -506,7 +515,7 @@ def main(args):
             model_s = f"model : {args.model} \n"
             lr_s = f"lr : {args.lr} \n"
             wd_s = f"wd : {args.wd} \n"  #####
-            dropout_s = f"dropout : {args.dropout} \n"
+            dropout_s = f"dropout : {args.dropout_p} \n"
             l1_lambda = f"l1_lambda : {args.l1_lambda} \n"
             l2_lambda = f"l2_lambda : {args.l2_lambda} \n"
             scheduler_s = f"scheduler : {args.scheduler} \n"
@@ -544,10 +553,11 @@ def main(args):
 
             if not os.path.exists(os.path.dirname(file_path)):
                 os.makedirs(os.path.dirname(file_path))
-            with open(file_path, "a") as f:
-                f.write(write_info)                      
+            if args.save_flag:
+                with open(file_path, "a") as f:
+                    f.write(write_info)                      
        
-        if args.save_weights:
+        if args.save_flag:
             
             # 保存best模型
             if args.elnloss:
@@ -571,7 +581,8 @@ def main(args):
                 os.makedirs(save_weights_path)
             torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth") 
         
-        # 记录验证loss是否出现上升         
+        # 记录验证loss是否出现上升 
+        patience = 0        
         if val_mean_loss <= current_mean_loss:
             current_mean_loss = val_mean_loss
             patience = 0
@@ -580,7 +591,7 @@ def main(args):
             patience += 1 
     
         # 早停判断
-        if patience >= 50:
+        if patience >= 20:
             
             print('恭喜你触发早停！！')
             
@@ -598,59 +609,66 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
     
     # 保存路径
-    parser.add_argument('--data_path', type=str, 
-                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_256_a50_c80.csv", 
+    parser.add_argument('--data_path',          type=str, 
+                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_chged_256_a50_c80.csv", 
                         help="path to csv dataset")
     
-    parser.add_argument('--save_scores_path', type=str, 
+    parser.add_argument('--save_scores_path',   type=str, 
                         default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_scores', 
                         help="root path to save scores on training and valing")
     
-    parser.add_argument('--save_weight_path', type=str,
+    parser.add_argument('--save_weight_path',   type=str,
                         default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights",
                         help="the path of save weights")
     # 模型配置
-    parser.add_argument('--model', type=str, default="unet", 
-                        help="'u2net_full' or 'u2net_lite' or 'unet'")
+    parser.add_argument('--model',              type=str, 
+                        default="SED_unet", 
+                        help="'u2net_full' or 'u2net_lite' or 'unet' or 'DL_unet' or 'SED_unet")
     
-    parser.add_argument('--loss_fn', type=str, default='FocalLoss', 
+    parser.add_argument('--loss_fn',            type=str, 
+                        default='DiceLoss', 
                         help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
     
-    parser.add_argument('--optimizer', type=str, default='AdamW', 
+    parser.add_argument('--optimizer',          type=str, 
+                        default='AdamW', 
                         help="'AdamW', 'SGD' or 'RMSprop'.")
     
-    parser.add_argument('--scheduler', type=str, default='CosineAnnealingLR', 
+    parser.add_argument('--scheduler',          type=str, 
+                        default='CosineAnnealingLR', 
                         help="'CosineAnnealingLR', 'ReduceLROnPlateau'.")
     
     # 正则化
-    parser.add_argument('--elnloss', type=bool, default=False, help='use elnloss or not')
-    parser.add_argument('--l1_lambda', type=float, default=0.001, help="L1 factor")
-    parser.add_argument('--l2_lambda', type=float, default=0.001, help=' L2 factor')
-    parser.add_argument('--dropout_p', type=float, default=0.0, help='dropout rate')
+    parser.add_argument('--elnloss',        type=bool,  default=False,  help='use elnloss or not')
+    parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
+    parser.add_argument('--l2_lambda',      type=float, default=0.001,  help=' L2 factor')
+    parser.add_argument('--dropout_p',      type=float, default=0.0,    help='dropout rate')
     
     
-    parser.add_argument('--device', type=str, default='cuda:0')
-    parser.add_argument('--resume', type=str, default=None, help="the path of weight for resuming")
-    parser.add_argument('--amp', type=bool, default=True, help='use mixed precision training or not')
-    parser.add_argument('--tb', type=bool, default=True, help='use tensorboard or not')   
-    parser.add_argument('--split_flag', type=bool, default=False, help='split data or not')
+    parser.add_argument('--device',         type=str,   default='cuda:0'     )
+    parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
+    parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
-    parser.add_argument('--save_weights', type=bool, default=True, help='save weights or not')
+    # flag参数
+    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
+    parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
+    parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
     # 训练参数
-    parser.add_argument('--train_ratio', type=float, default=0.7)
-    parser.add_argument('--val_ratio', type=float, default=0.1)
-    parser.add_argument('--batch_size', type=int, default=12)
-    parser.add_argument('--start_epoch', type=int, default=0, help='start epoch')
-    parser.add_argument('--end_epoch', type=int, default=150, help='ending epoch')
-    parser.add_argument('--lr', type=float, default=3e-4, help='learning rate')
-    parser.add_argument('--wd', type=float, default=1e-4, help='weight decay')
+    parser.add_argument('--train_ratio',    type=float, default=0.7     )
+    parser.add_argument('--val_ratio',      type=float, default=0.1     )
+    parser.add_argument('--batch_size',     type=int,   default=16      )
+    parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
+    parser.add_argument('--end_epoch',      type=int,   default=80,     help='ending epoch')
+
+    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
-    parser.add_argument('--eval_interval', type=int, default=1, help='interval for evaluation')
-    parser.add_argument('--small_data', type=int, default=None, help='number of small data')
-    parser.add_argument('--Tmax', type=int, default=200, help='the numbers of half of T for CosineAnnealingLR')
-    parser.add_argument('--eta_min', type=float, default=1e-8, help='minimum of lr for CosineAnnealingLR')
-    parser.add_argument('--last_epoch', type=int, default=0, help='start epoch of lr decay for CosineAnnealingLR')
+    parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
+    parser.add_argument('--small_data',     type=int,   default=None,   help='number of small data')
+    parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
+    parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
+    parser.add_argument('--last_epoch',     type=int,   default=0,      help='start epoch of lr decay for CosineAnnealingLR')
 
     args = parser.parse_args()
     main(args)

@@ -20,15 +20,15 @@ def save_sem_paths_to_csv(root_path, csv_path, csv_name) -> pd.DataFrame:
     # 遍历root_path下的所有目录和文件
     for root, dirs, files in os.walk(root_path):
         # 只在当前层级查找以'im'或'ma'开头的目录
-        dirs[:] = [d for d in dirs if d.startswith(('images_256_a50_c80', 'masks_256_a50_c80'))]
+        dirs[:] = [d for d in dirs if d.startswith(('chged_images_256_a50_c80', 'chged_masks_256_a50_c80'))]
         for dir_name in dirs:
             dir_path = os.path.join(root, dir_name)
             # 根据目录名前缀分别处理'img'和'mask'目录
-            if dir_name.startswith('im'):
+            if dir_name.startswith('chged_im'):
                 for img_file in os.listdir(dir_path):
                     img_path = os.path.join(dir_path, img_file)
                     path_dict['img'].append(img_path)
-            elif dir_name.startswith('ma'):
+            elif dir_name.startswith('chged_ma'):
                 for mask_file in os.listdir(dir_path):
                     mask_path = os.path.join(dir_path, mask_file)
                     path_dict['mask'].append(mask_path)
@@ -97,7 +97,7 @@ if __name__ == '__main__':
     #数据集路径
     root_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA'
     csv_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/csv'
-    csv_name = 'rock_sem_256_a50_c80.csv'
+    csv_name = 'rock_sem_chged_256_a50_c80.csv'
     save_sem_paths_to_csv(root_path, csv_path, csv_name)
     # # 转换
     # img_compose = transforms.Compose([

@@ -71,7 +71,7 @@ class UNet(nn.Module):
     def __init__(self, in_channels,
                  n_classes,
                  p, 
-                 base_channels=64,
+                 base_channels=32,
                  bilinear=True
                  ):
         super(UNet, self).__init__()

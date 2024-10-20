@@ -8,6 +8,7 @@ import time
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet
 from model.DL_unet import DL_UNet
+from model.SED_unet import SED_UNet
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -56,6 +57,12 @@ def main(args):
                     in_channels=3,
                     n_classes=4,
                     p=0)
+    elif args.model_name == 'SED_unet':
+        model = SED_UNet(
+                    in_channels=3,
+                    n_classes=4,
+                    p=0,
+                    base_channels=32)
     else:
         raise ValueError(f"model name error")
     
@@ -68,43 +75,10 @@ def main(args):
         model.load_state_dict(pretrain_weights)
         
     model = model.to(device)
-    
-    # # 预测
-    # loss_fn = CrossEntropyLoss()  # DiceLoss()  Focal_Loss()
-    # Metrics = Evaluate_Metric()
-
-    # val_mean_loss, Metric_list = evaluate(model, device, test_loader, loss_fn, Metrics)
-    # val_mean_loss = val_mean_loss / len(test_loader)
-
-    # # 评价指标 metrics = [recall, precision, dice, f1_score]
-    # val_metrics ={}
-    # val_metrics["Recall"] = Metric_list[0]
-    # val_metrics["Precision"] = Metric_list[1]
-    # val_metrics["Dice"] = Metric_list[2]
-    # val_metrics["F1_scores"] = Metric_list[3]
-            
-    # # 保存指标
-    # metrics_table_header = ['Metrics_Name', 'Mean']
-    # metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores']
-    # time_s = f" 👉 time :{datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} 👈\n"
-    # metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
-    # metrics_table = [[metric_name,
-    #                     metrics_dict[metric_name][3],
-    #                 ]
-    #                     for metric_name in metrics_table_left
-    #                 ]
-    # table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-    # loss_s = F" 👉 mean_loss :{val_mean_loss:.3f} 👈\n"
-
-    # # 记录每个epoch对应的train_loss、lr以及验证集各指标
-    # write_info = time_s + '\n' + table_s + '\n' + '\n' + loss_s + '\n' + '\n'
-
-    # # 打印结果
-    # print(write_info)
-    
+     
     if args.single:
         # test 单张
-        path = '/mnt/c/VScode/WS-Hub/WS-U2net/Image1 - 003.jpeg'
+        path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
         img = Image.open(path).convert('RGB')
         img = np.array(img)
         
@@ -122,7 +96,8 @@ def main(args):
         # 保存图片
         if not os.path.exists("predict/"):
             os.mkdir("predict/")
-        pred_img_pil.save(f"predict/DLunet_FC_cos_adamw_lr:5e-4_wd:1e-5.png")
+        # pred_img_pil.save(f"predict/SED_unet_Dice_cos_adamw_lr:8e-4_wd:1e-6.png")
+        pred_img_pil.save(f"predict/test.png")
         print("预测完成!")
         
     else:
@@ -167,9 +142,10 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_224.csv')
-    parser.add_argument('--base_size', type=int, default=224)
-    parser.add_argument('--model_name', type=str, default='DL_unet', help='model name must be unet, u2net_full or u2net_lite')
-    parser.add_argument('--weights_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/DL_unet/L: FocalLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0005-wd: 1e-05/2024-10-08_15:20:33/model_best.pth')
+    parser.add_argument('--base_size', type=int, default=256)
+    parser.add_argument('--model_name', type=str, default='SED_unet', help='model name must be unet, u2net_full or u2net_lite or DL_unet or SED_unet')
+    parser.add_argument('--weights_path', type=str, 
+                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/SED_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-20_10:17:37/model_best.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/results/predict/')
     parser.add_argument('--single', type=bool, default=True, help='test one img or not')
     

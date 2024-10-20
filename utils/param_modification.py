@@ -9,7 +9,7 @@ def modify_param(args, modifications, x):
     elif param_name in ['eval_interval', 'batch_size', 'Tmax', 'last_epoch', 'small_data']:
         value = int(input(f"请输入你想修改的 {param_name} 值（int）："))
         
-    elif param_name in ['save_weights','elnloss', 'split_flag']:
+    elif param_name in ['save_flag','elnloss', 'split_flag']:
         value = bool(input(f"请输入你想修改的 {param_name} 值（bool）："))
         
     elif param_name in ['optimizer', 'scheduler', 'model', 'loss_fn', 'resume']:
@@ -34,7 +34,7 @@ def param_modification(args, x):
         '11': 'Tmax',
         '12': 'eta_min',
         '13': 'last_epoch',
-        '14': 'save_weights',
+        '14': 'save_flag',
         '15': 'batch_size',
         '16': 'small_data',
         '17': 'eval_interval',
@@ -54,7 +54,7 @@ def param_modification(args, x):
     c_Tmax = args.Tmax
     c_eta_min = args.eta_min
     c_last_epoch = args.last_epoch
-    c_save_weights = args.save_weights
+    c_save_weights = args.save_flag
     c_scheduler = args.scheduler
     c_model = args.model
     c_loss_fn = args.loss_fn

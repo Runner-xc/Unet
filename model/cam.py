@@ -35,7 +35,7 @@ class SemanticSegmentationTarget:
         return (model_output[self.category, :, : ] * self.mask).sum()
 
 # 加载图像
-img_path = "/mnt/c/VScode/WS-Hub/WS-U2net/Image1 - 003.jpeg"
+img_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg"
 img = Image.open(img_path).resize((224,224)).convert('RGB')
 
 # 预处理图像
@@ -47,14 +47,14 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/unet/L: FocalLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0005-wd: 0.0001/2024-10-16_10:45:25/model_best.pth'
+weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/DL_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-18_19:39:46/model_best.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
 # 创建模型实例
-model = UNet(in_channels=3, n_classes=4, p=0.25)
+# model = UNet(in_channels=3, n_classes=4, p=0.25)
 
-# model = DL_UNet(in_channels=3, n_classes=4, p=0.25)
+model = DL_UNet(in_channels=3, n_classes=4, p=0.25)
 
 # model = u2net_full_config()
 
@@ -134,7 +134,7 @@ with GradCAM(model=model,
                         targets=IP_targets)[0, :]
     IP_cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
-name = "Unet_FC_Cos_lr:5e-4_wd_1e-4"    
+name = "1_DLUnet_Dice_Cos_lr:8e-4_wd_1e-6"    
 # 保存图片
 save_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img/"
 OM_cam_img = Image.fromarray(OM_cam_image)

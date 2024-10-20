@@ -17,22 +17,20 @@ import torch.nn.functional as F
 class Evaluate_Metric(nn.Module):
     def __init__(self, smooth=1e-5):
         super(Evaluate_Metric, self).__init__()
-        self.class_names = [
-                            'Background',   
+        self.class_names = [ 
                             'Organic matter', 
                             'Organic pores', 
                             'Inorganic pores']
         self.labels = {
-            'Background':0,
-            'Organic matter':1,
-            'Organic pores':2,
-            'Inorganic pores':3
+            'Organic matter':0,
+            'Organic pores':1,
+            'Inorganic pores':2
         }
         self.smooth = smooth
         
     def compute_confusion_matrix(self, img_pred, img_mask, threshold=0.5):
         """
-        img_pred: 预测值 (batch, 4, h, w)
+        img_pred: 预测值 (batch, 3, h, w)
         img_mask: 标签值 (batch, 1, h, w) -> one_hot (batch, 4, h, w)
         """
         
@@ -50,7 +48,7 @@ class Evaluate_Metric(nn.Module):
 
     def recall(self, img_pred, img_mask):
         """"
-        img_pred: 预测值 (batch, 4, h, w)
+        img_pred: 预测值 (batch, 3, h, w)
         img_mask: 标签值 (batch, h, w)
         """
         # recall_dict = {}
@@ -69,7 +67,7 @@ class Evaluate_Metric(nn.Module):
         OM_rc = recall[1].item()
         OP_rc = recall[2].item()
         IOP_rc = recall[3].item()
-        recall = recall.sum() / 4
+        recall = recall[1:].mean()
         recall = recall.item()
         
         return OM_rc, OP_rc, IOP_rc, recall
@@ -92,7 +90,7 @@ class Evaluate_Metric(nn.Module):
         OM_pc = precision[1].item()
         OP_pc = precision[2].item()
         IOP_pc = precision[3].item()
-        precision = precision.sum() / 4
+        precision = precision[1:].mean()
         precision = precision.item()
         
         return OM_pc, OP_pc, IOP_pc, precision
@@ -131,7 +129,7 @@ class Evaluate_Metric(nn.Module):
         logits = F.one_hot(logits, num_classes=num_classes).permute(0, 3, 1, 2).float()
         # targets: (b, h, w) -> (b, c, h, w)
         targets = targets.to(torch.int64)
-        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float() 
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
         
         # 计算总体dice
         intersection = (logits * targets).sum(dim=(0,-2,-1))
@@ -141,7 +139,7 @@ class Evaluate_Metric(nn.Module):
         OM_dice = dice[1].item()
         OP_dice = dice[2].item()
         IOP_dice = dice[3].item()
-        dice = dice.mean()
+        dice = dice[1:].mean()
         dice = dice.item()
 
         return OM_dice, OP_dice, IOP_dice, dice
@@ -164,7 +162,7 @@ class Evaluate_Metric(nn.Module):
         OM_iou = iou[1].item()
         OP_iou = iou[2].item()
         IOP_iou = iou[3].item()
-        mIoU = iou.mean()
+        mIoU = iou[1:].mean()
         mIoU = mIoU.item()
         
         return OM_iou, OP_iou, IOP_iou, mIoU
@@ -186,7 +184,7 @@ class Evaluate_Metric(nn.Module):
         OM_acc = accuracy[1].item()
         OP_acc = accuracy[2].item()
         IOP_acc = accuracy[3].item()
-        accuracy = accuracy.mean().item()
+        accuracy = accuracy[1:].mean().item()
         
         return OM_acc, OP_acc, IOP_acc, accuracy
 
