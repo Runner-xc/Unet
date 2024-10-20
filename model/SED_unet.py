@@ -6,7 +6,7 @@ from torchinfo import summary
 import torch.nn as nn
 import torch.nn.functional as F
 
-'''-------------一、SE模块-----------------------------'''
+"""---------------------------------------------------SE--------------------------------------------------------------------------"""
 #全局平均池化+1*1卷积核+ReLu+1*1卷积核+Sigmoid
 class SE_Block(nn.Module):
     def __init__(self, inchannel, ratio=16):
@@ -31,6 +31,36 @@ class SE_Block(nn.Module):
             # Fscale操作：将得到的权重乘以原来的特征图x
             return x * y.expand_as(x)
 
+"""---------------------------------------------Pyramid Pooling Module---------------------------------------------------------------------------"""
+class PSPModule(nn.Module):
+    def __init__(self, in_channels: int, bin_size_list: list = [4, 6, 8, 10]):
+        super(PSPModule, self).__init__()
+        branch_channels = in_channels // 4  # C/4
+        self.branches = nn.ModuleList()
+        for i in range(len(bin_size_list)):
+            branch = nn.Sequential(
+                nn.AdaptiveAvgPool2d(output_size=bin_size_list[i]),  # 使用平均池化
+                nn.Conv2d(in_channels, branch_channels, kernel_size=1),
+                nn.BatchNorm2d(branch_channels),
+                nn.ReLU()
+            )
+            self.branches.append(branch)
+
+    def forward(self, inputs):
+        if not self.branches:
+            return inputs
+        final = None
+        for i, branch in enumerate(self.branches):
+            out = branch(inputs)
+            out = F.interpolate(out, size=inputs.shape[2:], mode='bilinear', align_corners=True)
+            if final is None:
+                final = out
+            else:
+                final = torch.cat([final, out], dim=1)
+        final = torch.cat([inputs, final], dim=1)  # 将各特征图在通道维上拼接起来
+        return final
+    
+"""---------------------------------------------Convolution Module---------------------------------------------------------------------------"""            
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super(DoubleConv, self).__init__()
@@ -73,7 +103,7 @@ class TripleConv(nn.Module):
         x = self.cbr2(x)
         x = self.cbr3(x)
         return x
-"----------------------------------------------下采样--------------------------------------------------------------------------"       
+"""----------------------------------------------下采样--------------------------------------------------------------------------"""       
 class Down(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Down, self).__init__()
@@ -97,7 +127,7 @@ class SE_Down(nn.Module):
         x = self.triple_conv(x)
         x = self.se(x) 
         return x
-"----------------------------------------------上采样--------------------------------------------------------------------------"         
+"""----------------------------------------------上采样--------------------------------------------------------------------------"""         
 class Up(nn.Module):
     def __init__(self, in_channels, out_channels, bilinear=True):
         super(Up, self).__init__()
@@ -145,7 +175,7 @@ class SE_Up(nn.Module):
         x = self.se(x)
         return x
 
-"----------------------------------------------输出--------------------------------------------------------------------------"       
+"""----------------------------------------------输出--------------------------------------------------------------------------"""       
 class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
@@ -168,6 +198,7 @@ class SED_UNet(nn.Module):
         self.bilinear = bilinear
         
         self.inconv = DoubleConv(in_channels, base_channels)
+        self.psp = PSPModule(base_channels)
         self.down1 = Down(base_channels, base_channels*2)
         self.down2 = Down(base_channels*2, base_channels*4)
         
@@ -183,11 +214,12 @@ class SED_UNet(nn.Module):
         self.up2 = SE_Up(base_channels * 8, base_channels * 4 // factor, bilinear)
         
         self.up3 = Up(base_channels * 4, base_channels * 2 // factor, bilinear)
-        self.up4 = Up(base_channels * 2, base_channels, bilinear)
+        self.up4 = Up(base_channels * 3, base_channels, bilinear)
         self.out_conv = OutConv(base_channels, n_classes)
         
     def forward(self, x):
         x1 = self.inconv(x)         # [1, 32, 256, 256]
+        x_psp = self.psp(x1)        # [1, 64, 256, 256]
         x2 = self.down1(x1)         # [1, 64, 128, 128]
         x2 = self.dropout(x2)       # dropout层
         x3 = self.down2(x2)         # [1, 128, 64, 64]
@@ -199,7 +231,10 @@ class SED_UNet(nn.Module):
         x = self.up1(x5, x4)        # [1, 128, 32, 32]
         x = self.up2(x, x3)         # [1, 64, 64, 64]
         x = self.up3(x, x2)         # [1, 32, 128, 128]
-        x = self.up4(x, x1)         # [1, 32, 256, 256]
+        # x = self.up4(x, x1)         # [1, 32, 256, 256]
+        
+        # 增加特征金字塔池化
+        x = self.up4(x, x_psp)
         logits = self.out_conv(x)   # [1, c, 256, 256]
         
         return logits
@@ -217,7 +252,11 @@ class SED_UNet(nn.Module):
         
 if __name__ == '__main__':
     model = SED_UNet(in_channels=3, n_classes=4, p=0.25)
-    x = torch.randn(1,3,320,320)
-    # output = model(x)
-    # print(model)
-    summary(model, (1,3,256,256))
+    x = torch.randn(1, 3, 256, 256)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    
+    x = x.to(device)
+    output = model(x)
+    print(output)
+    summary(model, (1, 3, 256, 256), device=device)
