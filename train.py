@@ -4,6 +4,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset
 from SEM_Data import SEM_DATA
 from utils import data_split
+from utils.writing_logs import writing_logs
 import argparse
 import os
 from torch.optim import Adam, SGD, RMSprop, AdamW
@@ -291,21 +292,7 @@ def main(args):
 
     """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     train_ratio = args.train_ratio
-    val_ratio = args.val_ratio
-    
-    
-    # 预处理
-    # img_compose  =  transforms.Compose([
-    #                 transforms.ToTensor(),
-    #                 transforms.Resize((320, 320)),
-    #                 transforms.GaussianBlur((3, 3)),
-    #                 transforms.RandomHorizontalFlip(p=0.5),
-    #                 transforms.Normalize(mean=[0.485], std=[0.229])])
-    
-    # mask_compose =  transforms.Compose([
-    #                 transforms.Resize((320, 320)),
-    #                 transforms.RandomHorizontalFlip(p=0.5)])
-    
+    val_ratio = args.val_ratio   
 
     # 划分数据集
     if args.small_data is not None:
@@ -359,40 +346,36 @@ def main(args):
         # 记录时间
         start_time = time.time()
         # 训练
-        total_loss = train_one_epoch(model, 
-                                    optimizer, 
-                                    epoch, 
-                                    train_dataloader, 
-                                    device=device, 
-                                    loss_fn=loss_fn, 
-                                    scaler=scaler,
-                                    elnloss=args.elnloss,     #  Elastic Net正则化
-                                    l1_lambda=args.l1_lambda,
-                                    l2_lambda=args.l2_lambda) # loss
-
+        train_loss, T_OM_loss, T_OP_loss, T_IOP_loss, T_Metric_list = train_one_epoch(model, 
+                                                                                                    optimizer, 
+                                                                                                    epoch, 
+                                                                                                    train_dataloader, 
+                                                                                                    device=device, 
+                                                                                                    loss_fn=loss_fn, 
+                                                                                                    scaler=scaler,
+                                                                                                    Metric=Metrics,
+                                                                                                    elnloss=args.elnloss,     #  Elastic Net正则化
+                                                                                                    l1_lambda=args.l1_lambda,
+                                                                                                    l2_lambda=args.l2_lambda) # loss_fn=loss_fn, 
         
-        save_file = {"model": model.state_dict(),
-                     "optimizer": optimizer.state_dict(),
-                     "Metrics": Metrics.state_dict(),
-                     "scheduler": scheduler.state_dict(),
-                     "epoch": epoch,
-                     "args": args}
         # 求平均
-        # train_OM_loss = OM_loss / len(train_dataloader)
-        # train_OP_loss = OP_loss / len(train_dataloader)
-        # train_IOP_loss = IOP_loss / len(train_dataloader)
-        train_mean_loss = total_loss / len(train_dataloader)
-
-        # 记录日志
-        # if args.save_flag:         
-        #     writer.add_scalars('train/Loss', 
-        #                     {'Mean':train_mean_loss, 
-        #                         #  'OM': train_OM_loss, 
-        #                         #  'OP': train_OP_loss, 
-        #                         #  'IOP': train_IOP_loss
-        #                         },
-        #                     epoch)
-
+        train_OM_loss = T_OM_loss / len(train_dataloader)
+        train_OP_loss = T_OP_loss / len(train_dataloader)
+        train_IOP_loss = T_IOP_loss / len(train_dataloader)
+        train_mean_loss = train_loss / len(train_dataloader)
+        
+        train_loss_list = [train_OM_loss, train_OP_loss, train_IOP_loss, train_mean_loss]
+        # 评价指标 metrics = [recall, precision, dice, f1_score]
+        train_metrics ={}
+        train_metrics[epoch] = epoch
+        train_metrics["Loss"] = train_loss_list
+        train_metrics["Recall"] = T_Metric_list[0]
+        train_metrics["Precision"] = T_Metric_list[1]
+        train_metrics["Dice"] = T_Metric_list[2]
+        train_metrics["F1_scores"] = T_Metric_list[3]
+        train_metrics["mIoU"] = T_Metric_list[4]
+        train_metrics["Accuracy"] = T_Metric_list[5]
+        
         # 结束时间
         end_time = time.time()
         train_cost_time = end_time - start_time
@@ -420,7 +403,7 @@ def main(args):
             val_OP_loss = OP_loss / len(val_dataloader)
             val_IOP_loss = IOP_loss / len(val_dataloader)
             val_mean_loss = mean_loss / len(val_dataloader)
-            
+            val_loss_list = [val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss]
             
             # 更新调度器
             scheduler.step()
@@ -428,6 +411,7 @@ def main(args):
             # 评价指标 metrics = [recall, precision, dice, f1_score]
             val_metrics ={}
             val_metrics[epoch] = epoch
+            val_metrics["Loss"] = val_loss_list
             val_metrics["Recall"] = Metric_list[0]
             val_metrics["Precision"] = Metric_list[1]
             val_metrics["Dice"] = Metric_list[2]
@@ -449,59 +433,8 @@ def main(args):
             # 记录日志
             tb = args.tb
             if tb:
-                writer.add_scalars('Loss', 
-                                {'val':val_mean_loss,
-                                 'train':train_mean_loss},
-                                epoch)
-                
-                writer.add_scalars('val/Loss',
-                                {'Mean':val_mean_loss,
-                                 'OM' : val_OM_loss,
-                                 'OP' : val_OP_loss,
-                                 'IOP' : val_IOP_loss
-                                },
-                                epoch)
-                
-                writer.add_scalars('val/Dice',
-                                {'Mean':val_metrics['Dice'][3],
-                                 'OM' : val_metrics['Dice'][0],
-                                 'OP' : val_metrics['Dice'][1],
-                                 'IOP' : val_metrics['Dice'][2]
-                                },
-                                epoch)
-                
-                writer.add_scalars('val/Precision', 
-                                {'Mean':val_metrics['Precision'][3],
-                                 'OM' : val_metrics['Precision'][0],
-                                 'OP' : val_metrics['Precision'][1],
-                                 'IOP' : val_metrics['Precision'][2]},
-                                epoch)
-                
-                writer.add_scalars('val/Recall', 
-                                {'Mean':val_metrics['Recall'][3],
-                                 'OM' : val_metrics['Recall'][0],
-                                 'OP' : val_metrics['Recall'][1],
-                                 'IOP' : val_metrics['Recall'][2]},
-                                epoch)
-                writer.add_scalars('val/F1', 
-                                {'Mean':val_metrics['F1_scores'][3],
-                                 'OM' : val_metrics['F1_scores'][0],
-                                 'OP' : val_metrics['F1_scores'][1],
-                                 'IOP' : val_metrics['F1_scores'][2]},
-                                epoch) 
-                
-                writer.add_scalars('val/mIoU', 
-                                {'Mean':val_metrics['mIoU'][3],
-                                 'OM' : val_metrics['mIoU'][0],
-                                 'OP' : val_metrics['mIoU'][1],
-                                 'IOP' : val_metrics['mIoU'][2]},
-                                epoch)
-                writer.add_scalars('val/Accuracy', 
-                                {'Mean':val_metrics['Accuracy'][3],
-                                 'OM' : val_metrics['Accuracy'][0],
-                                 'OP' : val_metrics['Accuracy'][1],
-                                 'IOP' : val_metrics['Accuracy'][2]},
-                                epoch)
+                writing_logs(writer, train_metrics, val_metrics, epoch)               
+                """-------------------------TXT--------------------------------------------------------"""        
                 writer.add_text('val/Metrics', 
                                 f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
                                 f"model: {args.model}, loss_fn: {args.loss_fn}, scheduler: {args.scheduler}"
@@ -509,6 +442,8 @@ def main(args):
                 
             
             # 保存指标
+            if best_mean_loss >= val_mean_loss and current_miou <= val_metrics["mIoU"][-1]:
+                best_epoch = epoch
             metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
             metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
             epoch_s = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
@@ -520,6 +455,7 @@ def main(args):
             l2_lambda = f"l2_lambda : {args.l2_lambda} \n"
             scheduler_s = f"scheduler : {args.scheduler} \n"
             loss_fn_s = f"loss_fn : {args.loss_fn} \n"
+            best_epoch_s = f"best_epoch : {best_epoch} \n"
             time_s = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
             cost_s = f"cost_time :{val_cost_time / 60:.2f}mins \n"
             
@@ -537,7 +473,7 @@ def main(args):
             loss_s = f"mean_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + cost_s + time_s + '\n'
+            write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s + '\n'
 
             # 打印结果
             print(write_info)
@@ -569,6 +505,14 @@ def main(args):
                 os.makedirs(save_weights_path)
 
             if best_mean_loss >= val_mean_loss and current_miou <= val_metrics["mIoU"][-1]:
+                save_file = {"model": model.state_dict(),
+                     "optimizer": optimizer.state_dict(),
+                     "Metrics": Metrics.state_dict(),
+                     "scheduler": scheduler.state_dict(),
+                     "best_mean_loss": best_mean_loss,
+                     "best_epoch": best_epoch,
+                     "epoch": epoch,
+                     "args": args}
                 torch.save(save_file, f"{save_weights_path}/model_best.pth")
                 best_mean_loss = val_mean_loss
                 current_miou = val_metrics["mIoU"][-1]
@@ -641,7 +585,7 @@ if __name__ == '__main__':
     parser.add_argument('--elnloss',        type=bool,  default=False,  help='use elnloss or not')
     parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
     parser.add_argument('--l2_lambda',      type=float, default=0.001,  help=' L2 factor')
-    parser.add_argument('--dropout_p',      type=float, default=0.0,    help='dropout rate')
+    parser.add_argument('--dropout_p',      type=float, default=0.5,    help='dropout rate')
     
     
     parser.add_argument('--device',         type=str,   default='cuda:0'     )
