@@ -9,4 +9,5 @@ predict/
 *.png
 *.jpeg
 !u2net.png
+*.tif
 *___pycache__

@@ -30,19 +30,15 @@ class Evaluate_Metric(nn.Module):
         
     def compute_confusion_matrix(self, img_pred, img_mask, threshold=0.5):
         """
-        img_pred: 预测值 (batch, 3, h, w)
+        img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, 1, h, w) -> one_hot (batch, 4, h, w)
         """
-        
-        # 将预测概率转换为二进制值
-        img_pred_binary = (img_pred > threshold).to(torch.int64)
-        img_mask = img_mask.to(torch.int64)
 
         # 计算混淆矩阵的元素
-        TP = ((img_pred_binary & img_mask) == 1).sum(dim=(-2, -1))
-        FN = ((~img_pred_binary & img_mask) == 1).sum(dim=(-2, -1))
-        FP = ((img_pred_binary & ~img_mask) == 1).sum(dim=(-2, -1))
-        TN = ((~img_pred_binary & ~img_mask) == 1).sum(dim=(-2, -1))
+        TP = torch.where((img_pred == 1) & (img_mask == 1), 1, 0).sum(dim=(-2, -1))
+        TN = torch.where((img_pred == 0) & (img_mask == 0), 1, 0).sum(dim=(-2, -1))
+        FP = torch.where((img_pred == 1) & (img_mask == 0), 1, 0).sum(dim=(-2, -1))
+        FN = torch.where((img_pred == 0) & (img_mask == 1), 1, 0).sum(dim=(-2, -1))
 
         return TP, FN, FP, TN
 
@@ -125,6 +121,7 @@ class Evaluate_Metric(nn.Module):
         """
         num_classes = logits.shape[1]
         # 预处理
+        logits = torch.softmax(logits, dim=1)
         logits = torch.argmax(logits, dim=1)
         logits = F.one_hot(logits, num_classes=num_classes).permute(0, 3, 1, 2).float()
         # targets: (b, h, w) -> (b, c, h, w)
@@ -149,6 +146,7 @@ class Evaluate_Metric(nn.Module):
         mIoU: 平均交并比
         """
         num_classes = logits.shape[1]
+        logits = torch.softmax(logits, dim=1)
         logits = torch.argmax(logits, dim=1)
         logits = F.one_hot(logits, num_classes=num_classes).permute(0, 3, 1, 2).float()
         targets = targets.to(torch.int64)

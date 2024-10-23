@@ -78,12 +78,12 @@ def main(args):
      
     if args.single:
         # test 单张
-        path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
+        path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/4_42_61_05.tif'
         img = Image.open(path).convert('RGB')
         img = np.array(img)
         
         img = torchvision.transforms.ToTensor()(img)
-        img = torchvision.transforms.Resize((1000,1000))(img)
+        # img = torchvision.transforms.Resize((1000,1000))(img)
         img = img.to(device)
         img = img.unsqueeze(0)
         logits = model(img)
@@ -96,8 +96,7 @@ def main(args):
         # 保存图片
         if not os.path.exists("predict/"):
             os.mkdir("predict/")
-        # pred_img_pil.save(f"predict/SED_unet_Dice_cos_adamw_lr:8e-4_wd:1e-6.png")
-        pred_img_pil.save(f"predict/test.png")
+        pred_img_pil.save(f"predict/tif_DL_unet_Dice_cos_adamw_lr:8e-4_wd:1e-6.png")        
         print("预测完成!")
         
     else:
@@ -143,9 +142,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_224.csv')
     parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='SED_unet', help='model name must be unet, u2net_full or u2net_lite or DL_unet or SED_unet')
+    parser.add_argument('--model_name', type=str, default='DL_unet', help='model name must be unet, u2net_full or u2net_lite or DL_unet or SED_unet')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/SED_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-20_10:17:37/model_best.pth')
+                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/DL_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-21_09:09:53/model_best.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/results/predict/')
     parser.add_argument('--single', type=bool, default=True, help='test one img or not')
     

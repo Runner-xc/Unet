@@ -39,7 +39,7 @@ class CrossEntropyLoss():
         targets = targets.to(torch.int64)
         targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
         targets = targets[:, 1:, ...]
-        ce = nn.CrossEntropyLoss(label_smoothing=1e-7, reduction='none')    # 不进行缩减会返回（batch, h, w）的loss值
+        ce = nn.CrossEntropyLoss(label_smoothing=1e-7, reduction='none', ignore_index=0)    # 不进行缩减会返回（batch, h, w）的loss值
        
         # celoss期望的logits是(b, c, h, w), targets是(b, h, w)
         loss_dict = {}

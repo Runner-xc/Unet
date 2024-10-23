@@ -221,15 +221,14 @@ class SED_UNet(nn.Module):
         x1 = self.inconv(x)         # [1, 32, 256, 256]
         x_psp = self.psp(x1)        # [1, 64, 256, 256]
         x2 = self.down1(x1)         # [1, 64, 128, 128]
-        x2 = self.dropout(x2)       # dropout层
         x3 = self.down2(x2)         # [1, 128, 64, 64]
         x3 = self.dropout(x3)       # dropout层
         x4 = self.down3(x3)         # [1, 256, 32, 32]
-        x4 = self.dropout(x4)       # dropout层
         x5 = self.down4(x4)         # [1, 256, 16, 16]
            
         x = self.up1(x5, x4)        # [1, 128, 32, 32]
         x = self.up2(x, x3)         # [1, 64, 64, 64]
+        x = self.dropout(x)         # dropout层
         x = self.up3(x, x2)         # [1, 32, 128, 128]
         # x = self.up4(x, x1)         # [1, 32, 256, 256]
         

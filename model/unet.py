@@ -97,15 +97,14 @@ class UNet(nn.Module):
     def forward(self, x):
         x1 = self.inconv(x)         # [1, 64, 320, 320]
         x2 = self.down1(x1)         # [1, 128, 160, 160]
-        x2 = self.dropout(x2)       # dropout层
         x3 = self.down2(x2)         # [1, 256, 80, 80]
         x3 = self.dropout(x3)       # dropout层
         x4 = self.down3(x3)         # [1, 512, 40, 40]
-        x4 = self.dropout(x4)       # dropout层
         x5 = self.down4(x4)         # [1, 512, 20, 20]
            
         x = self.up1(x5, x4)        # [1, 256, 40, 40]
         x = self.up2(x, x3)         # [1, 128, 80, 80]
+        x = self.dropout(x)         # dropout层
         x = self.up3(x, x2)         # [1, 64, 160, 160]
         x = self.up4(x, x1)         # [1, 64, 320, 320]
         logits = self.out_conv(x)   # [1, c, 320, 320]

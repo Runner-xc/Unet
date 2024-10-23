@@ -42,7 +42,7 @@ def total_loss(model_output, target, loss_fn):
     return total_loss
   
 
-def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler, elnloss, l1_lambda, l2_lambda):
+def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler, Metric, elnloss, l1_lambda, l2_lambda):
     """"
     model:             模型
     optimizer:         优化器
@@ -62,6 +62,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
     epoch_OM_loss = 0.0
     epoch_OP_loss = 0.0
     epoch_IOP_loss = 0.0
+    Metric_list = np.zeros((6, 4))
 
     # 使用 tqdm 包装 train_dataloader
     train_dataloader = tqdm(train_dataloader, desc=f" Training on Epoch :{epoch + 1}😀", leave=False)
@@ -77,10 +78,10 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
         with autocast(device_type="cuda"):
             # 训练 + 计算loss
             # pred_masks：list:(7, pred_mask)
-            pred_masks = model(images)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+            pred = model(images)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
 
-            if isinstance(pred_masks, list):
-                train_mean_loss = total_loss(pred_masks, masks, loss_fn)
+            if isinstance(pred, list):
+                train_mean_loss = total_loss(pred, masks, loss_fn)
                 
                 # if elnloss:
                 #     # 添加Elastic Net正则化
@@ -88,8 +89,13 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
                 #     train_mean_loss = train_mean_loss + elastic_net_loss
               
             else:
-                loss_dict = loss_fn(pred_masks, masks)
+                loss_dict = loss_fn(pred, masks)
                 train_mean_loss = loss_dict['total_loss']
+                OM_loss, OP_loss, IOP_loss = loss_dict['Organic matter'], loss_dict['Organic pores'], loss_dict['Inorganic pores']
+                
+                masks = masks.to(torch.int64)
+                metrics = Metric.update(pred, masks)
+                Metric_list += metrics
                 
                 # if elnloss:
                 #     # 添加Elastic Net正则化
@@ -112,11 +118,12 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
         scaler.update()
 
         epoch_train_loss += train_mean_loss.item()
-        # epoch_OM_loss += OM_loss.item()
-        # epoch_OP_loss += OP_loss.item()
-        # epoch_IOP_loss += IOP_loss.item()
+        epoch_OM_loss += OM_loss.item()
+        epoch_OP_loss += OP_loss.item()
+        epoch_IOP_loss += IOP_loss.item()
+    Metric_list /= len(train_dataloader)
         
-    return epoch_train_loss
+    return epoch_train_loss, epoch_OM_loss, epoch_OP_loss, epoch_IOP_loss, Metric_list
 
 def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
     """
