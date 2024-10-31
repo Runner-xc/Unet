@@ -25,6 +25,7 @@ from metrics import Evaluate_Metric
 from torch.utils.tensorboard import SummaryWriter
 import utils.transforms as T
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
+from typing import Union, List
 
 
 class SODPresetTrain:
@@ -227,15 +228,17 @@ def main(args):
         
     # 损失函数
     
-    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss']
+    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWBLoss']
     if args.loss_fn == 'CrossEntropyLoss':
         loss_fn = CrossEntropyLoss()
     elif args.loss_fn == 'DiceLoss':
         loss_fn = DiceLoss()
     elif args.loss_fn == 'FocalLoss':
         loss_fn = Focal_Loss()
-    else:
-        loss_fn = DiceLoss()
+    elif args.loss_fn == 'WDiceLoss':
+        loss_fn = WDiceLoss()
+    elif args.loss_fn == 'DWBLoss':
+        loss_fn = DWBLoss()
     
     # 缩放器
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
@@ -323,7 +326,7 @@ def main(args):
                                 pin_memory=True)
     
     val_dataloader = DataLoader(val_datasets, 
-                                batch_size=4, 
+                                batch_size=8, 
                                 shuffle=False, 
                                 num_workers=num_workers,
                                 pin_memory=True)
@@ -333,12 +336,13 @@ def main(args):
     end_epoch = args.end_epoch
   
     best_mean_loss, current_miou = float('inf'), 0.0
+    best_epoch = 0 
     current_mean_loss = float('inf')
     
     if args.resume:
         start_epoch = checkpoint['epoch']
         print(f"Resume from epoch: {start_epoch}")
-        
+       
     for epoch in range(start_epoch, end_epoch):
         
         print(f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈")
@@ -347,16 +351,16 @@ def main(args):
         start_time = time.time()
         # 训练
         train_loss, T_OM_loss, T_OP_loss, T_IOP_loss, T_Metric_list = train_one_epoch(model, 
-                                                                                                    optimizer, 
-                                                                                                    epoch, 
-                                                                                                    train_dataloader, 
-                                                                                                    device=device, 
-                                                                                                    loss_fn=loss_fn, 
-                                                                                                    scaler=scaler,
-                                                                                                    Metric=Metrics,
-                                                                                                    elnloss=args.elnloss,     #  Elastic Net正则化
-                                                                                                    l1_lambda=args.l1_lambda,
-                                                                                                    l2_lambda=args.l2_lambda) # loss_fn=loss_fn, 
+                                                                                    optimizer, 
+                                                                                    epoch, 
+                                                                                    train_dataloader, 
+                                                                                    device=device, 
+                                                                                    loss_fn=loss_fn, 
+                                                                                    scaler=scaler,
+                                                                                    Metric=Metrics,
+                                                                                    elnloss=args.elnloss,     #  Elastic Net正则化
+                                                                                    l1_lambda=args.l1_lambda,
+                                                                                    l2_lambda=args.l2_lambda) # loss_fn=loss_fn, 
         
         # 求平均
         train_OM_loss = T_OM_loss / len(train_dataloader)
@@ -383,14 +387,16 @@ def main(args):
         # 打印
 
         print(
-            #   f"train_OM_loss: {train_OM_loss:.3f}\n"
-            #   f"train_OP_loss: {train_OP_loss:.3f}\n"
-            #   f"train_IOP_loss: {train_IOP_loss:.3f}\n"
+              f"train_OM_loss: {train_OM_loss:.3f}\n"
+              f"train_OP_loss: {train_OP_loss:.3f}\n"
+              f"train_IOP_loss: {train_IOP_loss:.3f}\n"
               f"train_mean_loss: {train_mean_loss:.3f}\n"
               f"train_cost_time: {train_cost_time:.2f}s\n")
         
         # 验证
         if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
+                      
+            e = best_epoch
 
             print(f"--Validation-- 😀")
             # 记录验证开始时间
@@ -442,7 +448,7 @@ def main(args):
                 
             
             # 保存指标
-            if best_mean_loss >= val_mean_loss and current_miou <= val_metrics["mIoU"][-1]:
+            if best_mean_loss >= val_mean_loss:
                 best_epoch = epoch
             metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
             metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
@@ -504,7 +510,7 @@ def main(args):
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
 
-            if best_mean_loss >= val_mean_loss and current_miou <= val_metrics["mIoU"][-1]:
+            if best_mean_loss >= val_mean_loss:
                 save_file = {"model": model.state_dict(),
                      "optimizer": optimizer.state_dict(),
                      "Metrics": Metrics.state_dict(),
@@ -513,7 +519,8 @@ def main(args):
                      "best_epoch": best_epoch,
                      "epoch": epoch,
                      "args": args}
-                torch.save(save_file, f"{save_weights_path}/model_best.pth")
+                torch.save(save_file, f"{save_weights_path}/model_best_e{epoch}.pth")
+                torch.remove(save_file, f"{save_weights_path}/model_best_e{e}.pth")
                 best_mean_loss = val_mean_loss
                 current_miou = val_metrics["mIoU"][-1]
 
@@ -566,12 +573,12 @@ if __name__ == '__main__':
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="SED_unet", 
+                        default="DL_unet", 
                         help="'u2net_full' or 'u2net_lite' or 'unet' or 'DL_unet' or 'SED_unet")
     
     parser.add_argument('--loss_fn',            type=str, 
-                        default='DiceLoss', 
-                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss'.")
+                        default='DWBLoss', 
+                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWBLoss'")
     
     parser.add_argument('--optimizer',          type=str, 
                         default='AdamW', 
@@ -584,7 +591,7 @@ if __name__ == '__main__':
     # 正则化
     parser.add_argument('--elnloss',        type=bool,  default=False,  help='use elnloss or not')
     parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
-    parser.add_argument('--l2_lambda',      type=float, default=0.001,  help=' L2 factor')
+    parser.add_argument('--l2_lambda',      type=float, default=0.001,  help='L2 factor')
     parser.add_argument('--dropout_p',      type=float, default=0.5,    help='dropout rate')
     
     
@@ -593,23 +600,23 @@ if __name__ == '__main__':
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     )
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=16      )
+    parser.add_argument('--batch_size',     type=int,   default=32      )
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
-    parser.add_argument('--end_epoch',      type=int,   default=80,     help='ending epoch')
+    parser.add_argument('--end_epoch',      type=int,   default=120,    help='ending epoch')
 
     parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
     parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
-    parser.add_argument('--small_data',     type=int,   default=None,   help='number of small data')
+    parser.add_argument('--small_data',     type=int,   default=1000,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
     parser.add_argument('--last_epoch',     type=int,   default=0,      help='start epoch of lr decay for CosineAnnealingLR')

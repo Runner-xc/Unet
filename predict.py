@@ -16,6 +16,7 @@ from utils.model_initial import *
 from loss_fn import *
 from metrics import Evaluate_Metric
 import utils.transforms as T
+from typing import Union, List
 
 class SODPresetEval:
     def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
@@ -28,12 +29,13 @@ class SODPresetEval:
     def __call__(self, img, target):
         data = self.transforms(img, target)
         return data
-    
+
+t = time.strftime("%Y%m%d_%H%M%S", time.localtime())
 def main(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # 加载数据集
-    test_dataset = SEM_DATA(args.data_path, transforms=SODPresetEval([320, 320]))
+    test_dataset = SEM_DATA(args.data_path, transforms=SODPresetEval([256, 256]))
     
     num_workers = 4
     test_loader = DataLoader(test_dataset, 
@@ -75,10 +77,11 @@ def main(args):
         model.load_state_dict(pretrain_weights)
         
     model = model.to(device)
-     
+    
+    Metric = Evaluate_Metric()  
     if args.single:
         # test 单张
-        path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/4_42_61_05.tif'
+        path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
         img = Image.open(path).convert('RGB')
         img = np.array(img)
         
@@ -96,57 +99,93 @@ def main(args):
         # 保存图片
         if not os.path.exists("predict/"):
             os.mkdir("predict/")
-        pred_img_pil.save(f"predict/tif_DL_unet_Dice_cos_adamw_lr:8e-4_wd:1e-6.png")        
+        pred_img_pil.save(f"predict/psp_SED_unet_WDice_cos_adamw_lr:8e-4_wd:1e-6_p:0.5.png")        
         print("预测完成!")
-        
+       
     else:
         # test 多张
-        model.eval()
-        test_loader = tqdm(test_loader, desc=f"  Validating  😀", leave=False)
-        count = 0
-        save_path = f"{args.save_path}/{args.model_name}"
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-            
-        for data in test_loader:
-            images, masks = data[0].to(device), data[1].to(device)
-            logits = model(images)  # [1, 4, 320, 320]
-            
-            # 使用 argmax 获取每个像素点预测最大的类别索引
-            pred_mask = torch.argmax(logits, dim=1)  # [1, 320, 320]
-            
-            # 移除批次维度，如果存在
-            pred_mask = pred_mask.squeeze(0)  # [320, 320]
-            
-            # 确保 pred_mask 是 uint8 类型
-            pred_mask = pred_mask.to(torch.uint8)
-            
-            # 将 pred_mask 转移到 CPU 上
-            pred_mask = pred_mask.cpu()
-            
-            # 将 torch.Tensor 转换为 numpy 数组
-            pred_mask_np = pred_mask.numpy()
-            
-            # 将 numpy 数组转换为 PIL 图像
-            pred_img_pil = Image.fromarray(pred_mask_np)
-            
-            # 保存图片
-            pred_img_pil.save(f"{save_path}/pred_{count}.png")
-            count += 1
-        
+        with torch.no_grad():
+            model.eval()
+            Metric_list = np.zeros((6, 4))
+            test_loader = tqdm(test_loader, desc=f"  Validating  😀", leave=False)
+            count = 0
+            save_path = f"{args.save_path}/{args.model_name}"
+            if not os.path.exists(save_path):
+                os.makedirs(save_path)
+                
+            for data in test_loader:
+                images, masks = data[0].to(device), data[1].to(device)
+                logits = model(images)  # [1, 4, 320, 320]
+                masks = masks.to(torch.int64)
+                masks = masks.squeeze(1)
+                
+                
+                # 使用 argmax 获取每个像素点预测最大的类别索引
+                pred_mask = torch.softmax(logits, dim=1)
+                metrics = Metric.update(pred_mask, masks)
+                Metric_list += metrics
+                pred_mask = torch.argmax(logits, dim=1)  # [1, 320, 320]
+                
+                # 移除批次维度，如果存在
+                pred_mask = pred_mask.squeeze(0)  # [320, 320]
+                
+                # 确保 pred_mask 是 uint8 类型
+                pred_mask = pred_mask.to(torch.uint8)
+                
+                # 将 pred_mask 转移到 CPU 上
+                pred_mask = pred_mask.cpu()
+                
+                # 将 torch.Tensor 转换为 numpy 数组
+                pred_mask_np = pred_mask.numpy()
+                
+                # 将 numpy 数组转换为 PIL 图像
+                pred_img_pil = Image.fromarray(pred_mask_np)
+                
+                # 保存图片
+                if not os.path.exists(f"{save_path}/pred_img/"):
+                    os.makedirs(f"{save_path}/pred_img/")
+                pred_img_pil.save(f"{save_path}/pred_img/{count}.png")
+                count += 1
+            Metric_list /= len(test_loader)
+        metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
+        metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
+        val_metrics = {}
+        val_metrics["Recall"] = Metric_list[0]
+        val_metrics["Precision"] = Metric_list[1]
+        val_metrics["Dice"] = Metric_list[2]
+        val_metrics["F1_scores"] = Metric_list[3]
+        val_metrics["mIoU"] = Metric_list[4]
+        val_metrics["Accuracy"] = Metric_list[5]
+        metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
+        metrics_table = [[metric_name,
+                            metrics_dict[metric_name][-1],
+                            metrics_dict[metric_name][0],
+                            metrics_dict[metric_name][1],
+                            metrics_dict[metric_name][2]
+                        ]
+                            for metric_name in metrics_table_left
+                        ]
+        table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
+        write_info = f"{args.model_name}" + "\n" + table_s
+        file_path = f'{save_path}/scores/{t}.txt'
+        if not os.path.exists(os.path.dirname(file_path)):
+            os.makedirs(os.path.dirname(file_path)) 
+        with open(file_path, "a") as f:
+                    f.write(write_info)
+        print(table_s)
         print("预测完成！")
         
             
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_224.csv')
+    parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
     parser.add_argument('--model_name', type=str, default='DL_unet', help='model name must be unet, u2net_full or u2net_lite or DL_unet or SED_unet')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/DL_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-21_09:09:53/model_best.pth')
-    parser.add_argument('--save_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/results/predict/')
-    parser.add_argument('--single', type=bool, default=True, help='test one img or not')
+                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/DL_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-30_08:57:22/model_best.pth')
+    parser.add_argument('--save_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict/')
+    parser.add_argument('--single', type=bool, default=False, help='test one img or not')
     
     args = parser.parse_args()
     main(args)
