@@ -6,9 +6,6 @@ import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
 import os
-from torch import einsum
-from torch import Tensor
-from typing import Any, Callable, Iterable, List, Set, Tuple, TypeVar, Union
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
@@ -28,7 +25,7 @@ class CrossEntropyLoss():
             'Inorganic pores':2
         }
 
-    def __call__(self, logits: Tensor, targets: Tensor) -> Tensor:
+    def __call__(self, logits, targets):
         """
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
@@ -91,7 +88,7 @@ class DiceLoss():
         # 计算总的损失
         intersection = (logits * targets).sum(dim=(0,-2,-1))
         union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
-        dice = (2 * intersection + self.smooth) / (union + self.smooth)
+        dice = (2 * intersection) / (union + self.smooth)
         loss = tensor_one - dice
         total_loss = loss.sum() / num_classes
         
@@ -163,19 +160,123 @@ class Focal_Loss():
 
             
 """
-boundary loss   # TODO: 待实验
+ELoss  # TODO: 待实验
 
 """
 
-
-
-"""
-基于距离的损失函数,计算预测分割与真实分割之间的平均表面距离。  # TODO: 待实验
-
-参数:
-    reduction (str): 指定损失的缩减方式,'mean' 或 'sum'。
-"""
+class WDiceLoss():
     
+    def __init__(self, smooth=1e-5):
+        """
+        smooth: 平滑值
+        """
+        self.smooth = smooth
+        self.class_names = [
+                            'Organic matter', 
+                            'Organic pores', 
+                            'Inorganic pores']
+        self.labels = {
+            'Organic matter':0,
+            'Organic pores':1,
+            'Inorganic pores':2
+        }
+        self.num_classes = len(self.class_names)
+
+    def __call__(self, logits, targets, weights=[0.2, 0.3, 0.5]):
+        """
+        img_pred: 预测值 (batch, 4, h, w)
+        img_mask: 标签值 (batch, h, w)
+        """
+        num_classes = logits.shape[1]
+        tensor_one = torch.tensor(1)
+        weights = weights
+
+        # logits argmax 
+        logits = torch.softmax(logits, dim=1)  # 不能直接使用argmax，会丢失grad_fn,因为argmax不可导
+        # targets: (b, h, w) -> (b, c, h, w)
+        targets = targets.to(torch.int64)
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        
+        # 计算每个类别的损失
+        loss_dict = {}
+        total_loss = 0
+        names = ['Organic matter', 'Organic pores', 'Inorganic pores'] 
+        for i in range(1,num_classes):
+            logit = logits[:, i, ...]
+            target = targets[:, i, ...]
+            # 计算总的损失
+            intersection = (logit * target).sum()
+            union = logit.sum() + target.sum()
+            dice = (2 * intersection) / (union + self.smooth)
+            loss = tensor_one - dice
+            loss = loss*weights[i-1]
+            loss_dict[names[i-1]] = loss 
+            total_loss += loss 
+        
+        
+        loss_dict['total_loss'] = total_loss / 3
+
+        return loss_dict
+
+"""
+DWBLoss 动态加权loss
+""" 
+class DWBLoss(nn.Module):
+    def __init__(self, smooth=1e-8):
+        self.class_names = [
+                            'Organic matter', 
+                            'Organic pores', 
+                            'Inorganic pores']
+        self.labels = {
+            'Organic matter':0,
+            'Organic pores':1,
+            'Inorganic pores':2
+        }
+        self.smooth = smooth
+
+    def __call__(self, logits, targets):
+        num_classes = logits.shape[1]
+        # 处理logits
+        preds = torch.softmax(logits, dim=1)
+        targets = targets.to(torch.int64)
+        masks = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        # 类别权重
+        total_loss = 0.0
+        loss_dict = {'Organic matter' : 0.0, 'Organic pores' : 0.0, 'Inorganic pores' : 0.0}
+        names = ['Organic matter', 'Organic pores', 'Inorganic pores'] 
+        weights = []
+
+        # 动态加权loss
+        for i in range(1,num_classes):
+            # 计算权重
+            for a in range(1,num_classes):            
+                # 真实类别概率
+                gy = torch.sum(targets == a) / (targets.numel() - torch.sum(targets == 0))
+                weights.append(gy)
+            # single_weight
+            wi = torch.log(max(weights) / weights[i-1]) + 1
+            # loss
+            x = preds[:, i, ...]    # p
+            y = masks[:, i, ...]    # one_hot
+            s1 = - wi**(1-x)*y*torch.log(x + self.smooth)
+            s1 = s1
+            s2 = - x*(1-x)          # 正则项
+            s2 = s2
+            # single_loss
+            dwbloss = s1 + s2
+            dwbloss = dwbloss
+            dwbloss = dwbloss[targets == i].mean()
+            loss_dict[names[i-1]] = dwbloss
+            # add
+            total_loss += dwbloss
+     
+        # 计算总的损失
+        loss_dict['total_loss'] = total_loss
+        return loss_dict  
+                
+
+
+
 
 class TotalLoss(nn.Module):
     """
