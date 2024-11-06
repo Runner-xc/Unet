@@ -3,10 +3,8 @@ unet
 """
 import os
 import torch
-from unet import UNet
+from unet import *
 from u2net import u2net_full_config
-from DL_unet import DL_UNet
-from SED_unet import SED_UNet
 import torch.nn.functional as F
 from PIL import Image
 import numpy as np
@@ -48,13 +46,13 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/SED_unet/L: WDiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-25_17:10:29/model_best.pth'
+weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/ResD_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-11-04_17:15:29/model_best.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
 # 创建模型实例
-model_name = {'DL_unet': DL_UNet, 'SED_unet': SED_UNet, 'unet': UNet}
-model = model_name['SED_unet'](in_channels=3, n_classes=4, p=0)
+model_name = {'ResD_unet': ResD_UNet, 'SED_unet': SED_UNet, 'unet': UNet}
+model = model_name['ResD_unet'](in_channels=3, n_classes=4, p=0)
 
 # model = DL_UNet(in_channels=3, n_classes=4, p=0)
 
@@ -107,9 +105,9 @@ IP_mask_float = np.float32(IP_mask == IP_category)
 # 指定目标层
 # target_layers = [model.up4.conv]
 
-target_layers = [model.up4.conv]
+# target_layers = [model.up4.conv]
 
-# target_layers = [model.out_conv]
+target_layers = [model.out_conv]
 
 # OM
 OM_targets = [SemanticSegmentationTarget(OM_category, OM_mask_float)]
@@ -138,7 +136,7 @@ with GradCAM(model=model,
                         targets=IP_targets)[0, :]
     IP_cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
-name = "PSPD_Unet_WDice_Cos_lr:8e-4_wd_1e-6_dropout:0.5"    
+name = "ResD_unet_Dice_Cos_lr:8e-4_wd_1e-6_dropout:0.5"    
 # 保存图片
 save_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img/"
 OM_cam_img = Image.fromarray(OM_cam_image)

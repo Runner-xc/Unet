@@ -1,6 +1,5 @@
 import torch
 import datetime
-import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset
 from SEM_Data import SEM_DATA
 from utils import data_split
@@ -10,10 +9,7 @@ import os
 from torch.optim import Adam, SGD, RMSprop, AdamW
 import time
 from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import UNet
-from model.DL_unet import DL_UNet
-from model.SED_unet import SED_UNet
-from tqdm import tqdm
+from model.unet import *
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
@@ -26,6 +22,7 @@ from torch.utils.tensorboard import SummaryWriter
 import utils.transforms as T
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from typing import Union, List
+from utils.run_tensorboard import run_tensorboard
 
 
 class SODPresetTrain:
@@ -120,15 +117,15 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "DL_unet", "SED_unet"], \
-        f"model must be 'u2net_full' or 'u2net_lite' or 'unet' or 'DL_unet', but got {args.model}"
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "ResD_unet", "SED_unet"], \
+        f"model must be 'u2net_full' or 'u2net_lite' or 'unet' or 'ResD_unet', but got {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
     elif args.model =="u2net_lite":
         model = u2net_lite_config()
         
-    elif args.model == "DL_unet":
-        model = DL_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "ResD_unet":
+        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
     
     # SED_UNet    
     elif args.model == "SED_unet":
@@ -251,9 +248,11 @@ def main(args):
         os.makedirs(save_logs_path)
     if args.save_flag:
         if args.elnloss:
-            writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}')
+            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}'
+            writer = SummaryWriter(log_path)
         else:
-            writer = SummaryWriter(f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}')
+            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}'
+            writer = SummaryWriter(log_path)
     """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
     
     if args.resume:
@@ -337,6 +336,7 @@ def main(args):
   
     best_mean_loss, current_miou = float('inf'), 0.0
     best_epoch = 0 
+    patience = 0 
     current_mean_loss = float('inf')
     
     if args.resume:
@@ -445,11 +445,12 @@ def main(args):
                                 f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
                                 f"model: {args.model}, loss_fn: {args.loss_fn}, scheduler: {args.scheduler}"
                                 )
-                
+                if epoch == 5:
+                    run_tensorboard(log_path)               
             
             # 保存指标
             if best_mean_loss >= val_mean_loss:
-                best_epoch = epoch
+                best_epoch = epoch + 1
             metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
             metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
             epoch_s = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
@@ -476,7 +477,7 @@ def main(args):
                             ]
             table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
             train_loss_s = f"train_loss : {train_mean_loss:.3f}  🍎🍎🍎\n"
-            loss_s = f"mean_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
+            loss_s = f"val_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
             write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s + '\n'
@@ -519,8 +520,8 @@ def main(args):
                      "best_epoch": best_epoch,
                      "epoch": epoch,
                      "args": args}
-                torch.save(save_file, f"{save_weights_path}/model_best_e{epoch}.pth")
-                torch.remove(save_file, f"{save_weights_path}/model_best_e{e}.pth")
+                torch.save(save_file, f"{save_weights_path}/model_best.pth")
+                print(f"Best model saved at epoch {epoch} with mean loss {best_mean_loss}")
                 best_mean_loss = val_mean_loss
                 current_miou = val_metrics["mIoU"][-1]
 
@@ -532,17 +533,16 @@ def main(args):
                 os.makedirs(save_weights_path)
             torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth") 
         
-        # 记录验证loss是否出现上升 
-        patience = 0        
+        # 记录验证loss是否出现上升       
         if val_mean_loss <= current_mean_loss:
-            current_mean_loss = val_mean_loss
+            current_mean_loss = val_mean_loss 
             patience = 0
                      
         else:
             patience += 1 
     
         # 早停判断
-        if patience >= 20:
+        if patience >= 50:
             
             print('恭喜你触发早停！！')
             
@@ -573,11 +573,11 @@ if __name__ == '__main__':
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="DL_unet", 
-                        help="'u2net_full' or 'u2net_lite' or 'unet' or 'DL_unet' or 'SED_unet")
+                        default="ResD_unet", 
+                        help="'u2net_full' or 'u2net_lite' or 'unet' or 'ResD_unet' or 'SED_unet")
     
     parser.add_argument('--loss_fn',            type=str, 
-                        default='DWBLoss', 
+                        default='DiceLoss', 
                         help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWBLoss'")
     
     parser.add_argument('--optimizer',          type=str, 
@@ -593,15 +593,14 @@ if __name__ == '__main__':
     parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
     parser.add_argument('--l2_lambda',      type=float, default=0.001,  help='L2 factor')
     parser.add_argument('--dropout_p',      type=float, default=0.5,    help='dropout rate')
-    
-    
+     
     parser.add_argument('--device',         type=str,   default='cuda:0'     )
     parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
@@ -610,13 +609,13 @@ if __name__ == '__main__':
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
     parser.add_argument('--batch_size',     type=int,   default=32      )
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
-    parser.add_argument('--end_epoch',      type=int,   default=120,    help='ending epoch')
+    parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 
     parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
     parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
-    parser.add_argument('--small_data',     type=int,   default=1000,   help='number of small data')
+    parser.add_argument('--small_data',     type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
     parser.add_argument('--last_epoch',     type=int,   default=0,      help='start epoch of lr decay for CosineAnnealingLR')
