@@ -182,39 +182,45 @@ class WDiceLoss():
         }
         self.num_classes = len(self.class_names)
 
-    def __call__(self, logits, targets, weights=[0.2, 0.3, 0.5]):
+    def __call__(self, logits, targets, weights=[0.3,0.3,0.4]):
         """
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
         """
         num_classes = logits.shape[1]
         tensor_one = torch.tensor(1)
-        weights = weights
-
         # logits argmax 
-        logits = torch.softmax(logits, dim=1)  # 不能直接使用argmax，会丢失grad_fn,因为argmax不可导
+        preds = torch.softmax(logits, dim=1)
+        list_2 = []
+        # 计算权重
+        for i in range(1,num_classes):           
+            # single_weight
+            pred = preds[:, i, ...]
+            x = pred * (targets==i)
+            x = x.mean()
+            list_2.append(x)
         # targets: (b, h, w) -> (b, c, h, w)
         targets = targets.to(torch.int64)
-        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
-        
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()     
         # 计算每个类别的损失
         loss_dict = {}
         total_loss = 0
         names = ['Organic matter', 'Organic pores', 'Inorganic pores'] 
         for i in range(1,num_classes):
-            logit = logits[:, i, ...]
+            pred = preds[:, i, ...]
             target = targets[:, i, ...]
             # 计算总的损失
-            intersection = (logit * target).sum()
-            union = logit.sum() + target.sum()
+            intersection = (pred * target).sum()
+            union = pred.sum() + target.sum()
             dice = (2 * intersection) / (union + self.smooth)
             loss = tensor_one - dice
-            loss = loss*weights[i-1]
+            # 加权
+            zz = list_2[i-1]*(list_2[i-1] - 1) # 正则项
+            loss = loss*(1 - (weights[i-1]**(1 - list_2[i-1]) + zz))
             loss_dict[names[i-1]] = loss 
             total_loss += loss 
-        
-        
-        loss_dict['total_loss'] = total_loss / 3
+
+        loss_dict['total_loss'] = total_loss
 
         return loss_dict
 
@@ -273,10 +279,6 @@ class DWBLoss(nn.Module):
         # 计算总的损失
         loss_dict['total_loss'] = total_loss
         return loss_dict  
-                
-
-
-
 
 class TotalLoss(nn.Module):
     """
