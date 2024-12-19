@@ -57,5 +57,5 @@ def run_tensorboard(log_path, PORT=6006, HOST='0.0.0.0'):
         print(f"😃 TensorBoard 启动成功！\n请访问 localhost:{PORT} 查看TensorBoard面板。")
 
 if __name__ == "__main__":
-    log_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/logs/ResD_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-11-04_17:15:29'
+    log_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/logs/DL_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-10-18_09:39:07'
     run_tensorboard(log_path, PORT=6006, HOST='0.0.0.0')

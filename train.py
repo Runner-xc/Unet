@@ -10,6 +10,7 @@ from torch.optim import Adam, SGD, RMSprop, AdamW
 import time
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import *
+from model.deeplabv3_model import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
@@ -23,6 +24,7 @@ import utils.transforms as T
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from typing import Union, List
 from utils.run_tensorboard import run_tensorboard
+from model.Segnet import SegNet
 
 
 class SODPresetTrain:
@@ -106,7 +108,7 @@ def main(args):
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_modification_path = f"/root/projects/WS-U2net/U-2-Net/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
             
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
     
@@ -117,19 +119,22 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "ResD_unet", "SED_unet"], \
-        f"model must be 'u2net_full' or 'u2net_lite' or 'unet' or 'ResD_unet', but got {args.model}"
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "Res_unet", "SE_unet", "RDHAM_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101"], \
+        f"wrong model: {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
     elif args.model =="u2net_lite":
         model = u2net_lite_config()
         
-    elif args.model == "ResD_unet":
-        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "Res_unet":
+        model = Res_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
     
-    # SED_UNet    
-    elif args.model == "SED_unet":
-        model = SED_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "RDHAM_unet":
+        model = RDHAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    
+    # SE_UNet    
+    elif args.model == "SE_unet":
+        model = SE_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p, flag=True)
         
     elif args.model == "unet":
         if args.small_data:
@@ -141,7 +146,19 @@ def main(args):
         else:
             model = UNet(
                          in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
- 
+            
+    elif args.model == "Segnet":
+        model = SegNet(n_classes=4, dropout_p=args.dropout_p)
+    # deeplabv3系列
+    elif args.model == "deeplabv3_resnet50":
+        model = deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4)
+
+    elif args.model == "deeplabv3_resnet101":
+        model = deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4)
+
+    elif args.model == "deeplabv3_mobilenetv3_large":
+        model = deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
+
     else:
         raise ValueError(f"Invalid model name: {args.model}")
     
@@ -149,7 +166,7 @@ def main(args):
     kaiming_initial(model)
     model.to(device)  
 
-    # 优化器
+    # 优化器   TODO: 优化器参数
     
     assert args.optimizer in ['AdamW', 'SGD', 'RMSprop'], \
         f'optimizer must be AdamW, SGD, RMSprop but got {args.optimizer}'
@@ -225,7 +242,7 @@ def main(args):
         
     # 损失函数
     
-    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWBLoss']
+    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss']
     if args.loss_fn == 'CrossEntropyLoss':
         loss_fn = CrossEntropyLoss()
     elif args.loss_fn == 'DiceLoss':
@@ -234,15 +251,15 @@ def main(args):
         loss_fn = Focal_Loss()
     elif args.loss_fn == 'WDiceLoss':
         loss_fn = WDiceLoss()
-    elif args.loss_fn == 'DWBLoss':
-        loss_fn = DWBLoss()
+    elif args.loss_fn == 'DWDLoss':
+        loss_fn = DWDLoss()
     
     # 缩放器
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_logs_path = f"/root/projects/WS-U2net/U-2-Net/results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
@@ -302,12 +319,12 @@ def main(args):
                                                                                                     num_small_data=args.small_data, 
                                                                                                     # train_ratio=0.8, 
                                                                                                     # val_ratio=0.1, 
-                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV',
+                            save_path='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV',
                             flag=args.split_flag) 
     
     else:
         train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
-                            save_path='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV',   # 保存划分好的数据集路径
+                            save_path='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV',   # 保存划分好的数据集路径
                             flag=args.split_flag)
 
     # 读取数据集
@@ -450,6 +467,7 @@ def main(args):
             
             # 保存指标
             if best_mean_loss >= val_mean_loss:
+                best_mean_loss = val_mean_loss
                 best_epoch = epoch + 1
             metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
             metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
@@ -511,19 +529,17 @@ def main(args):
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
 
-            if best_mean_loss >= val_mean_loss:
-                save_file = {"model": model.state_dict(),
-                     "optimizer": optimizer.state_dict(),
-                     "Metrics": Metrics.state_dict(),
-                     "scheduler": scheduler.state_dict(),
-                     "best_mean_loss": best_mean_loss,
-                     "best_epoch": best_epoch,
-                     "epoch": epoch,
-                     "args": args}
-                torch.save(save_file, f"{save_weights_path}/model_best.pth")
-                print(f"Best model saved at epoch {epoch} with mean loss {best_mean_loss}")
-                best_mean_loss = val_mean_loss
-                current_miou = val_metrics["mIoU"][-1]
+            save_file = {"model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "Metrics": Metrics.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "best_mean_loss": best_mean_loss,
+                    "best_epoch": best_epoch,
+                    "epoch": epoch,
+                    "args": args}
+            torch.save(save_file, f"{save_weights_path}/model_best.pth")
+            print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")                
+            current_miou = val_metrics["mIoU"][-1]
 
             # only save latest 10 epoch weights
             if os.path.exists(f"{save_weights_path}/model_ep:{epoch-10}.pth"):
@@ -542,7 +558,7 @@ def main(args):
             patience += 1 
     
         # 早停判断
-        if patience >= 50:
+        if patience >= 30:
             
             print('恭喜你触发早停！！')
             
@@ -561,24 +577,25 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
-                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_chged_256_a50_c80.csv", 
+                        default="/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_chged_256_a50_c80.csv", 
                         help="path to csv dataset")
     
     parser.add_argument('--save_scores_path',   type=str, 
-                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_scores', 
+                        default='/root/projects/WS-U2net/U-2-Net/results/save_scores', 
                         help="root path to save scores on training and valing")
     
     parser.add_argument('--save_weight_path',   type=str,
-                        default="/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights",
+                        default="/root/projects/WS-U2net/U-2-Net/results/save_weights",
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="ResD_unet", 
-                        help="'u2net_full' or 'u2net_lite' or 'unet' or 'ResD_unet' or 'SED_unet")
+                        default="deeplabv3_resnet50", 
+                        help="u2net_full 、 u2net_lite 、 unet 、 Res_unet 、 SE_unet 、 RDHAM_unet \
+                              Segnet, deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large")
     
     parser.add_argument('--loss_fn',            type=str, 
                         default='DiceLoss', 
-                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWBLoss'")
+                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWDLoss'")
     
     parser.add_argument('--optimizer',          type=str, 
                         default='AdamW', 
@@ -599,15 +616,15 @@ if __name__ == '__main__':
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
     # 训练参数
-    parser.add_argument('--train_ratio',    type=float, default=0.7     )
+    parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=32      )
+    parser.add_argument('--batch_size',     type=int,   default=24      )
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 

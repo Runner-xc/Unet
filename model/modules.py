@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .attention import *
 """-------------------------------------------------Convolution----------------------------------------------"""
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
@@ -20,9 +21,33 @@ class DoubleConv(nn.Module):
         x = self.cbr1(x1)
         x = self.c2(x)
         return x
+    
+class Conv_3(nn.Module):
+    def __init__(self, in_channels, out_channels, mid_channels=None):
+        super(Conv_3, self).__init__()
+        if mid_channels is None:
+            mid_channels = out_channels // 4
+        self.conv1 = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1)
+        self.relu = nn.ReLU(inplace=True)
+        self.bn1 = nn.BatchNorm2d(mid_channels)
+        self.cbr1 = nn.Sequential(self.conv1, self.bn1, self.relu)
+
+        self.conv2 = nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(mid_channels)
+        self.c2 = nn.Sequential(self.conv2, self.bn2, self.relu)
+        
+        self.conv3 = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(out_channels)
+        self.c3 = nn.Sequential(self.conv3, self.bn3, self.relu)
+        
+    def forward(self, x1):
+        x = self.cbr1(x1)
+        x = self.c2(x)
+        x = self.c3(x)
+        return x
 
 class Dalit_Conv(nn.Module):
-    def __init__(self, in_channels, out_channels, mid_channels=None):
+    def __init__(self, in_channels, out_channels, mid_channels=None, flag=False):
         super(Dalit_Conv, self).__init__()
         if mid_channels is None:
             mid_channels = out_channels
@@ -37,7 +62,10 @@ class Dalit_Conv(nn.Module):
         
         self.conv3 = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=3, dilation=3)
         self.bn3 = nn.BatchNorm2d(out_channels)
-        self.c3 = nn.Sequential(self.conv3, self.bn3, self.relu)
+        if flag:
+            self.c3 = nn.Sequential(self.conv3, self.bn3)
+        else:
+            self.c3 = nn.Sequential(self.conv3, self.bn3, self.relu)
         
     def forward(self, x1):
         x = self.cbr1(x1)
@@ -112,14 +140,17 @@ class ResD_Down(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ResD_Down, self).__init__()
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.D_conv = Dalit_Conv(in_channels, out_channels)
-        self.res_conv = ResConv(out_channels, out_channels)
+        self.D_conv = Dalit_Conv(in_channels, out_channels, flag=True)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         self.relu = nn.ReLU(inplace=True)
         
     def forward(self, x):
         x = self.maxpool(x)
+        res = x
+        res = self.conv(res)
         x = self.D_conv(x)
-        x = self.res_conv(x)
+        x = torch.add(x, res)
+        x = self.relu(x)
         return x
 
 class SE_Down(nn.Module):
@@ -203,14 +234,15 @@ class Res_Up(nn.Module):
 class ResD_Up(nn.Module):
     def __init__(self, in_channels, out_channels, bilinear=True):
         super(ResD_Up, self).__init__()
+        self.relu = nn.ReLU(inplace=True)
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = Dalit_Conv(in_channels, out_channels, in_channels//2)
-            self.res_conv = ResConv(out_channels, out_channels)
+            self.conv = Dalit_Conv(in_channels, out_channels, in_channels//2, flag=True)
+            self.res_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         else:
             self.up = nn.ConvTranspose2d(in_channels, in_channels//2, kernel_size=2, stride=2)
-            self.conv = Dalit_Conv(in_channels, out_channels)
-            self.res_conv = ResConv(out_channels, out_channels)
+            self.conv = Dalit_Conv(in_channels, out_channels, flag=True)
+            self.res_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         
     def forward(self, x1, x2):
         x1 = self.up(x1)
@@ -220,9 +252,11 @@ class ResD_Up(nn.Module):
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
                         diffY // 2, diffY - diffY // 2])
 
-        x = torch.cat([x2, x1], dim=1)
-        x = self.conv(x)
-        x = self.res_conv(x)
+        res = torch.cat([x2, x1], dim=1)
+        x = self.conv(res)
+        res = self.res_conv(res)
+        x = torch.add(x, res)
+        x = self.relu(x)
         return x
 
 class SE_Up(nn.Module):
@@ -382,9 +416,9 @@ class CausalityFactorsExtractor(nn.Module):
     
 """---------------------------------------------Pyramid Pooling Module----------------------------------------------------"""
 class PSPModule(nn.Module):
-    def __init__(self, in_channels: int, bin_size_list: list = [16, 32, 64, 128]):
+    def __init__(self, in_channels: int, bin_size_list: list = [1, 2, 4, 8]):
         super(PSPModule, self).__init__()
-        branch_channels = in_channels // 4 # C/4
+        branch_channels = in_channels // 4        ## C/4
         self.branches = nn.ModuleList()
         # CAB 模块
         self.causality_map_block = CausalityMapBlock()

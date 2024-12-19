@@ -225,9 +225,9 @@ class WDiceLoss():
         return loss_dict
 
 """
-DWBLoss 动态加权loss
+DWDLoss 动态加权loss
 """ 
-class DWBLoss(nn.Module):
+class DWDLoss(nn.Module):
     def __init__(self, smooth=1e-8):
         self.class_names = [
                             'Organic matter', 
@@ -239,7 +239,14 @@ class DWBLoss(nn.Module):
             'Inorganic pores':2
         }
         self.smooth = smooth
-
+    def calculate_cnum(self, targets):
+        cnum = []
+        for i in range(1,4):
+            cnum.append(torch.sum(targets==i))
+        return torch.tensor(cnum)
+    def calculate_weights(self, n, c):
+        max_n = torch.max(n)
+        return torch.log(max_n / n[c-1]) + 1
     def __call__(self, logits, targets):
         num_classes = logits.shape[1]
         # 处理logits
@@ -250,31 +257,27 @@ class DWBLoss(nn.Module):
         total_loss = 0.0
         loss_dict = {'Organic matter' : 0.0, 'Organic pores' : 0.0, 'Inorganic pores' : 0.0}
         names = ['Organic matter', 'Organic pores', 'Inorganic pores'] 
-        weights = []
+        one = torch.tensor(1).to(targets.device)
 
         # 动态加权loss
         for i in range(1,num_classes):
             # 计算权重
-            for a in range(1,num_classes):            
-                # 真实类别概率
-                gy = torch.sum(targets == a) / (targets.numel() - torch.sum(targets == 0))
-                weights.append(gy)
-            # single_weight
-            wi = torch.log(max(weights) / weights[i-1]) + 1
-            # loss
-            x = preds[:, i, ...]    # p
-            y = masks[:, i, ...]    # one_hot
-            s1 = - wi**(1-x)*y*torch.log(x + self.smooth)
-            s1 = s1
-            s2 = - x*(1-x)          # 正则项
-            s2 = s2
+            cnum = self.calculate_cnum(targets).to(targets.device)
+            weight = self.calculate_weights(cnum, i).to(targets.device)
+
+            # 计算dice + loss
+            pred = preds[:, i, ...]    # 预测
+            mask = masks[:, i, ...]    # 标签
+            intersection = (pred * mask).sum()
+            union = (pred.sum() + mask.sum())
+            ip = intersection / masks[:, i, ...].sum()
+            dice = (2 * intersection) / (union + self.smooth)
             # single_loss
-            dwbloss = s1 + s2
-            dwbloss = dwbloss
-            dwbloss = dwbloss[targets == i].mean()
-            loss_dict[names[i-1]] = dwbloss
+            w_dice = weight ** (1-ip) * dice 
+            loss = one - w_dice
+            loss_dict[names[i-1]] = loss
             # add
-            total_loss += dwbloss
+            total_loss += loss
      
         # 计算总的损失
         loss_dict['total_loss'] = total_loss

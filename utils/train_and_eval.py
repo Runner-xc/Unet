@@ -80,6 +80,10 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
             # pred_masks：list:(7, pred_mask)
             pred = model(images)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
 
+            # 针对deeplab模型输出为字典的情况，需要进行特殊处理
+            if isinstance(pred, dict):
+                pred = pred["out"]
+
             if isinstance(pred, list):
                 train_mean_loss = total_loss(pred, masks, loss_fn)
                 
@@ -101,20 +105,16 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
                 #     # 添加Elastic Net正则化
                 #     elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
                 #     train_mean_loss = train_mean_loss + elastic_net_loss
-            
 
         # 反向传播
         scaler.scale(train_mean_loss).backward()
-
-        
+      
         # 检查梯度是否包含inf或nan
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
         # 更新参数
         scaler.step(optimizer)
-        
-        # 更新梯度缩放器
         scaler.update()
 
         epoch_train_loss += train_mean_loss.item()
@@ -150,8 +150,12 @@ def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
             images, masks =data[0].to(device), data[1].to(device)
             with autocast(device_type="cuda"):
                 pred_mask = model(images)         # 验证  模型 softmax 输出
-                loss_dict = loss_fn(pred_mask, masks)
-           
+
+                # 针对deeplab模型输出为字典的情况，需要进行特殊处理
+                if isinstance(pred_mask, dict):
+                    pred_mask = pred_mask["out"]
+
+                loss_dict = loss_fn(pred_mask, masks)  
                 masks = masks.to(torch.int64)
                 masks = masks.squeeze(1)
                 metrics = Metric.update(pred_mask, masks)

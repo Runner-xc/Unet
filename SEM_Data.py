@@ -98,8 +98,8 @@ class SEM_DATA(Dataset):
           
 if __name__ == '__main__':
     #数据集路径
-    root_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA'
-    csv_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/csv'
+    root_path = '/root/projects/WS-U2net/U-2-Net/SEM_DATA'
+    csv_path = '/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV'
     csv_name = 'rock_sem_chged_256_a50_c80.csv'
     save_sem_paths_to_csv(root_path, csv_path, csv_name)
     # # 转换

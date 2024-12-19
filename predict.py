@@ -5,8 +5,9 @@ from torch.utils.data import DataLoader, Dataset
 from SEM_Data import SEM_DATA
 import argparse
 import time
+from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import UNet, ResD_UNet, SED_UNet
+from model.unet import *
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -52,17 +53,16 @@ def main(args):
         model = u2net_full_config()
     elif args.model_name == 'u2net_lite':
         model = u2net_lite_config()
-    elif args.model_name == 'ResD_unet':
-        model = ResD_UNet(
+    elif args.model_name == 'Res_unet':
+        model = Res_UNet(
                     in_channels=3,
                     n_classes=4,
                     p=0)
-    elif args.model_name == 'SED_unet':
-        model = SED_UNet(
-                    in_channels=3,
-                    n_classes=4,
-                    p=0,
-                    base_channels=32)
+    elif args.model_name == 'SE_unet':
+        model = SE_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0, flag=True)
+
+    elif args.model_name == 'Segnet':
+        model = SegNet(n_classes=4, dropout_p=0)
     else:
         raise ValueError(f"model name error")
     
@@ -79,7 +79,7 @@ def main(args):
     Metric = Evaluate_Metric()  
     if args.single:
         # test 单张
-        path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
+        path = '/root/projects/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
         img = Image.open(path).convert('RGB')
         img = np.array(img)
         
@@ -97,7 +97,7 @@ def main(args):
         # 保存图片
         if not os.path.exists("single_predict/"):
             os.mkdir("single_predict/")
-        pred_img_pil.save(f"single_predict/ResD_unet_WDice_cos_adamw_lr:8e-4_wd:1e-6_p:0.5.png")        
+        pred_img_pil.save(f"single_predict/Segnet.png")        
         print("预测完成!")
        
     else:
@@ -177,12 +177,12 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
+    parser.add_argument('--data_path', type=str, default='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='ResD_unet', help='model name must be unet, u2net_full or u2net_lite or ResD_unet or SED_unet')
+    parser.add_argument('--model_name', type=str, default='Segnet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/ResD_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-11-03_18:27:32/model_best.pth')
-    parser.add_argument('--save_path', type=str, default='/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict/')
+                        default='/root/projects/WS-U2net/U-2-Net/results/save_weights/Segnet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-13_10:08:05/model_best.pth')
+    parser.add_argument('--save_path', type=str, default='/root/projects/WS-Hub/WS-U2net/U-2-Net/results/predict/')
     parser.add_argument('--single', type=bool, default=True, help='test one img or not')
     
     args = parser.parse_args()

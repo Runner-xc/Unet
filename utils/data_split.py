@@ -84,7 +84,7 @@ def small_data_split_to_train_val_test(data_path, num_small_data: int, flag, tra
     return train_data_save_path, val_data_save_path, test_data_save_path
 
 if __name__ == '__main__':
-    data_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/SEM_path.csv"
+    data_path = "/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV/SEM_path.csv"
     train_data, val_data, test_data = data_split_to_train_val_test(data_path)
     print(len(train_data), train_data.shape, train_data['img'])
     

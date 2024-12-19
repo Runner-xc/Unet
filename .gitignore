@@ -10,4 +10,4 @@ predict/
 *.jpeg
 !u2net.png
 *.tif
-*___pycache__
+*.pyc

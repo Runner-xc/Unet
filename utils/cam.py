@@ -3,8 +3,8 @@ unet
 """
 import os
 import torch
-from unet import *
-from u2net import u2net_full_config
+from model.unet import *
+from model.u2net import u2net_full_config
 import torch.nn.functional as F
 from PIL import Image
 import numpy as np
@@ -46,7 +46,7 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/ResD_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-11-04_17:15:29/model_best.pth'
+weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/ResD_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-11-06_22:26:31_策略4（更改ResD）/model_best.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
