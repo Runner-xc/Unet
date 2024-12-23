@@ -11,6 +11,7 @@ import time
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import *
 from model.deeplabv3_model import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
+from model.pspnet import PSPNet
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
@@ -119,7 +120,7 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "Res_unet", "SE_unet", "RDHAM_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101"], \
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "Res_unet", "SE_unet", "RDHAM_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet"], \
         f"wrong model: {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
@@ -149,6 +150,10 @@ def main(args):
             
     elif args.model == "Segnet":
         model = SegNet(n_classes=4, dropout_p=args.dropout_p)
+    
+    elif args.model == "pspnet":
+        model = PSPNet(num_classes=4, use_aux=True, dropout_p=args.dropout_p)
+
     # deeplabv3系列
     elif args.model == "deeplabv3_resnet50":
         model = deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4)
@@ -589,9 +594,9 @@ if __name__ == '__main__':
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="deeplabv3_resnet50", 
+                        default="pspnet", 
                         help="u2net_full 、 u2net_lite 、 unet 、 Res_unet 、 SE_unet 、 RDHAM_unet \
-                              Segnet, deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large")
+                              Segnet, deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large, pspnet")
     
     parser.add_argument('--loss_fn',            type=str, 
                         default='DiceLoss', 
@@ -624,7 +629,7 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=24      )
+    parser.add_argument('--batch_size',     type=int,   default=2      )
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 

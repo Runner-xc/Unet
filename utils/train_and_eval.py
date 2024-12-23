@@ -76,35 +76,51 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
         
         # 使用混合精度训练
         with autocast(device_type="cuda"):
-            # 训练 + 计算loss
-            # pred_masks：list:(7, pred_mask)
-            pred = model(images)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+            pred = model(images)  
+            masks = masks.to(torch.int64)
 
-            # 针对deeplab模型输出为字典的情况，需要进行特殊处理
-            if isinstance(pred, dict):
-                pred = pred["out"]
-
+            # U2Net
             if isinstance(pred, list):
-                train_mean_loss = total_loss(pred, masks, loss_fn)
-                
+                train_mean_loss = total_loss(pred, masks, loss_fn)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
                 # if elnloss:
                 #     # 添加Elastic Net正则化
                 #     elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
                 #     train_mean_loss = train_mean_loss + elastic_net_loss
-              
+                metrics = Metric.update(pred, masks)
+                Metric_list += metrics
+            
+            # 是否使用辅助分类器
+            elif isinstance(pred, tuple):
+                heatmap, aux = pred
+
+                # 主分支loss
+                main_loss_dict = loss_fn(heatmap, masks)
+                m_mean_loss = main_loss_dict['total_loss']
+                m_OM_loss, m_OP_loss, m_IOP_loss = main_loss_dict['Organic matter'], main_loss_dict['Organic pores'], main_loss_dict['Inorganic pores']
+
+                # 辅助分支loss
+                aux_loss_dict = loss_fn(aux, masks)
+                a_mean_loss = aux_loss_dict['total_loss']
+                a_OM_loss, a_OP_loss, a_IOP_loss = aux_loss_dict['Organic matter'], aux_loss_dict['Organic pores'], aux_loss_dict['Inorganic pores']
+                
+                # 计算总损失：主分支损失*0.6 + 辅助分支损失*0.4
+                train_mean_loss = m_mean_loss*0.6 + a_mean_loss*0.4
+                OM_loss, OP_loss, IOP_loss = m_OM_loss*0.6 + a_OM_loss*0.4, m_OP_loss*0.6 + a_OP_loss*0.4, m_IOP_loss*0.6 + a_IOP_loss*0.4
+
+                metrics = Metric.update(heatmap, masks)
+                Metric_list += metrics
+
             else:
                 loss_dict = loss_fn(pred, masks)
                 train_mean_loss = loss_dict['total_loss']
                 OM_loss, OP_loss, IOP_loss = loss_dict['Organic matter'], loss_dict['Organic pores'], loss_dict['Inorganic pores']
-                
-                masks = masks.to(torch.int64)
-                metrics = Metric.update(pred, masks)
-                Metric_list += metrics
-                
                 # if elnloss:
                 #     # 添加Elastic Net正则化
                 #     elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
                 #     train_mean_loss = train_mean_loss + elastic_net_loss
+
+                metrics = Metric.update(pred, masks)
+                Metric_list += metrics
 
         # 反向传播
         scaler.scale(train_mean_loss).backward()
@@ -150,22 +166,48 @@ def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
             images, masks =data[0].to(device), data[1].to(device)
             with autocast(device_type="cuda"):
                 pred_mask = model(images)         # 验证  模型 softmax 输出
-
-                # 针对deeplab模型输出为字典的情况，需要进行特殊处理
-                if isinstance(pred_mask, dict):
-                    pred_mask = pred_mask["out"]
-
-                loss_dict = loss_fn(pred_mask, masks)  
                 masks = masks.to(torch.int64)
                 masks = masks.squeeze(1)
-                metrics = Metric.update(pred_mask, masks)
-                Metric_list += metrics    
+                # U2Net
+                if isinstance(pred_mask, list):
+                    mean_loss = total_loss(pred_mask, masks, loss_fn)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+                    metrics = Metric.update(pred_mask, masks)
+                    Metric_list += metrics
+
+                # 是否使用辅助分类器
+                elif isinstance(pred_mask, tuple):
+                    heatmap, aux = pred_mask
+
+                    # 主分支loss
+                    main_loss_dict = loss_fn(heatmap, masks)
+                    m_mean_loss = main_loss_dict['total_loss']
+                    m_OM_loss, m_OP_loss, m_IOP_loss = main_loss_dict['Organic matter'], main_loss_dict['Organic pores'], main_loss_dict['Inorganic pores']
+
+                    # 辅助分支loss
+                    aux_loss_dict = loss_fn(aux, masks)
+                    a_mean_loss = aux_loss_dict['total_loss']
+                    a_OM_loss, a_OP_loss, a_IOP_loss = aux_loss_dict['Organic matter'], aux_loss_dict['Organic pores'], aux_loss_dict['Inorganic pores']
+                    
+                    # 计算总损失：主分支损失*0.6 + 辅助分支损失*0.4
+                    mean_loss = m_mean_loss*0.6 + a_mean_loss*0.4
+                    OM_loss, OP_loss, IOP_loss = m_OM_loss*0.6 + a_OM_loss*0.4, m_OP_loss*0.6 + a_OP_loss*0.4, m_IOP_loss*0.6 + a_IOP_loss*0.4
+
+                    metrics = Metric.update(heatmap, masks)
+                    Metric_list += metrics    
+
+                else:
+                    loss_dict = loss_fn(pred_mask, masks)
+                    mean_loss = loss_dict['total_loss']
+                    OM_loss, OP_loss, IOP_loss = loss_dict['Organic matter'], loss_dict['Organic pores'], loss_dict['Inorganic pores']
+
+                    metrics = Metric.update(pred_mask, masks)
+                    Metric_list += metrics    
 
             # 累加损失   # TODO : 2
-            val_mean_loss += loss_dict['total_loss'].item()
-            val_OM_loss += loss_dict['Organic matter'].item()
-            val_OP_loss += loss_dict['Organic pores'].item()
-            val_IOP_loss += loss_dict['Inorganic pores'].item()
+            val_mean_loss += mean_loss.item()
+            val_OM_loss += OM_loss.item()
+            val_OP_loss += OP_loss.item()
+            val_IOP_loss += IOP_loss.item()
     
     Metric_list /= len(val_dataloader)
 
