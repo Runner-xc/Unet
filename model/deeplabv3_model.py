@@ -104,7 +104,7 @@ class DeepLabV3(nn.Module):
             x = F.interpolate(x, size=input_shape, mode='bilinear', align_corners=False)
             result["aux"] = x
 
-        return result
+        return result["out"], result["aux"]
 
 
 class FCNHead(nn.Sequential):
