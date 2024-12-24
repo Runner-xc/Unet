@@ -5,8 +5,9 @@ from typing import Dict, List
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
-from .resnet_backbone import resnet50, resnet101
-from .mobilenet_backbone import mobilenet_v3_large
+from model.resnet_backbone import resnet50, resnet101
+from model.mobilenet_backbone import mobilenet_v3_large
+from torchinfo import summary
 
 
 class IntermediateLayerGetter(nn.ModuleDict):
@@ -279,3 +280,8 @@ def deeplabv3_mobilenetv3_large(aux, num_classes=21, pretrain_backbone=False):
     model = DeepLabV3(backbone, classifier, aux_classifier)
 
     return model
+
+if __name__ == '__main__':
+    net = deeplabv3_resnet50(aux=True, num_classes=4, pretrain_backbone=False)
+    x = torch.randn(1,3,256,256)
+    summary(net)

@@ -1,8 +1,9 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from .modules import *
+from model.modules import *
 from torchinfo import summary
+from model.resnet_backbone import *
 
 class ConvBNReluLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, groups=1, dilation=1, padding=None, name=None):
@@ -67,136 +68,19 @@ class BottleneckBlock(nn.Module):
         y = torch.nn.functional.relu(y)  # ReLU激活
         return y
     
-class DilatedResnet101(nn.Module):
-    def __init__(self, block=BottleneckBlock, num_classes=1000):
-        super(DilatedResnet101, self).__init__()
-        # 4种BottleneckBlock, 每种个数如下
-        depth = [3, 4, 23, 3]
-        # 4种BottleneckBlock的输入数据通道数
-        num_channels = [64, 256, 512, 1024]
-        # 4种BottleneckBlock的第一个卷积核的通道数，最后输出会变为4倍
-        num_filters = [64, 128, 256, 512]
-        # 卷积操作
-        self.conv = ConvBNReluLayer(in_channels=3, out_channels=64, kernel_size=7, stride=2)
-        # 全局池化
-        self.pool2d_max = torch.nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        # BottleneckBlock的输入和输出是否能直接相加
-        l1_shortcut = False
-
-        
-        # 第1种BottleneckBlock, 共3个, 将列表的操作解包依次添加到顺序容器Sequential中
-        self.layer1 = torch.nn.Sequential(
-            *self.make_layer(
-                block,
-                num_channels[0],
-                num_filters[0],
-                depth[0],
-                stride=1,
-                shortcut=l1_shortcut,
-                name='layer1'
-            )
-        )
-        # 第2种BottleneckBlock, 共4个
-        self.layer2 = torch.nn.Sequential(
-            *self.make_layer(
-                block,
-                num_channels[1],
-                num_filters[1],
-                depth[1],
-                stride=2,
-                name='layer2'
-            )
-        )
-        # 第3种BottleneckBlock, 共6个
-        self.layer3 = torch.nn.Sequential(
-            *self.make_layer(
-                block, 
-                num_channels[2],
-                num_filters[2],
-                depth[2],
-                stride=1,
-                name='layer3',
-                dilation=2  # 将layer3的conv的dilation参数设为2
-            )
-        )
-        # 第4种BottleneckBlock, 共4个
-        self.layer4 = torch.nn.Sequential(
-            *self.make_layer(
-                block,
-                num_channels[3],
-                num_filters[3],
-                depth[3],
-                stride=1,
-                name='layer4',
-                dilation=4   # 将layer4的conv的dilation参数设为4
-            )
-        )
-        # 全局平均池化
-        self.last_pool = torch.nn.AdaptiveAvgPool2d(output_size=(1, 1))
-        # 将全局池化的 NCHW -> NC, 用于全连接层
-        self.out_dim = num_filters[-1] * block.expansion
-        # 全连接层
-        self.fc = torch.nn.Linear(in_features=num_filters[-1] * block.expansion, out_features=num_classes)
-
-    def forward(self, inputs):
-        x = self.conv(inputs)
-        x = self.pool2d_max(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.last_pool(x)
-        x = torch.reshape(x, shape=[-1, self.out_dim])
-        x = self.fc(x)
-
-        return x
-
-    def make_layer(self, block, in_channels, out_channels, depth, stride, dilation=1, shortcut=False, name=None):
-        """
-        用于生成4种BottleneckBlock
-        block: BottleneckBlock
-        depth: 该种BottleneckBlock的个数
-        """
-        layers = torch.nn.ModuleList()  # 用于保存子层列表，它包含的子层将被正确地注册和添加。
-        if dilation > 1:
-            # 如果进行了空洞卷积的操作, 则进行填充大小为空洞的大小
-            padding = dilation
-        else:
-            padding = None
-        
-        # 添加BottleneckBlock
-        layers.append(block(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            stride=stride,
-            shortcut=shortcut,
-            dilation=dilation,
-            padding=padding,
-            name=f'{name}.0'
-        ))
-        # 添加BottleneckBlock, 这里添加的BottleneckBlock有相同的规律
-        for i in range(1, depth):
-            layers.append(block(
-                in_channels=out_channels * block.expansion,
-                out_channels=out_channels,
-                stride=1,
-                dilation=dilation,
-                padding=padding,
-                name=f'{name}.{i}'
-            ))
-        return layers
+def resnet50(**kwargs):
+    res50 = ResNet(Bottleneck, [3, 4, 6, 3],**kwargs) 
+    return res50
     
 class PSPNet(nn.Module):
     def __init__(self, num_classes, dropout_p, use_aux=True):
         super(PSPNet, self).__init__()
-        res = DilatedResnet101()  # 生成backbone
+        res = resnet50()  # 生成backbone
         self.use_aux = use_aux  # 是否用辅助分类器，True则用
         self.dropout = nn.Dropout2d(p=dropout_p)
-        
-        self.initial = nn.Sequential(
-            res.conv,
-            res.pool2d_max
-        )
+        self.conv = ConvBNReluLayer(in_channels=3, out_channels=64, kernel_size=7, stride=2)
+        # 全局池化
+        self.pool2d_max = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         
         self.layer1 = res.layer1
         self.layer2 = res.layer2
@@ -228,7 +112,9 @@ class PSPNet(nn.Module):
     def forward(self, inputs):
         input_size = inputs.shape[2:]  # H, W
         # inputs: [3, 1, 1]
-        x = self.initial(inputs)  # [64, 1/4, 1/4]
+        x = self.conv(inputs)
+        x = self.pool2d_max(x)
+
         x = self.layer1(x)  # [256, 1/4, 1/4]
         x = self.dropout(x)
 
@@ -253,7 +139,7 @@ class PSPNet(nn.Module):
         return heatmap
     
 if __name__ == '__main__':
-    net = PSPNet(num_classes=3, use_aux=True)
+    net = PSPNet(num_classes=3, use_aux=True, dropout_p=0.5)
     x = torch.randn(2, 3, 256, 256)
     heatmap, aux = net(x)
     summary(model=net)

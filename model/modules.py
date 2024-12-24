@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .attention import *
+from model.attention import *
 """-------------------------------------------------Convolution----------------------------------------------"""
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
