@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader, Dataset
 from SEM_Data import SEM_DATA
 import argparse
 import time
+from model.deeplabv3_model import deeplabv3_resnet50
+from model.pspnet import PSPNet
 from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import *
@@ -63,6 +65,13 @@ def main(args):
 
     elif args.model_name == 'Segnet':
         model = SegNet(n_classes=4, dropout_p=0)
+    
+    elif args.model_name == "pspnet":
+        model = PSPNet(num_classes=4, dropout_p=0, use_aux=False)
+
+    elif args.model_name == "deeplabv3":
+        model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
+        
     else:
         raise ValueError(f"model name error")
     
@@ -79,7 +88,7 @@ def main(args):
     Metric = Evaluate_Metric()  
     if args.single:
         # test 单张
-        path = '/root/projects/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
+        path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
         img = Image.open(path).convert('RGB')
         img = np.array(img)
         
@@ -97,7 +106,7 @@ def main(args):
         # 保存图片
         if not os.path.exists("single_predict/"):
             os.mkdir("single_predict/")
-        pred_img_pil.save(f"single_predict/Segnet.png")        
+        pred_img_pil.save(f"single_predict/deeplabv3.png")        
         print("预测完成!")
        
     else:
@@ -172,18 +181,17 @@ def main(args):
                     f.write(write_info)
         print(table_s)
         print("预测完成！")
-        
             
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
+    parser.add_argument('--data_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='Segnet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet')
+    parser.add_argument('--model_name', type=str, default='Segnet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3')
     parser.add_argument('--weights_path', type=str, 
-                        default='/root/projects/WS-U2net/U-2-Net/results/save_weights/Segnet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-13_10:08:05/model_best.pth')
-    parser.add_argument('--save_path', type=str, default='/root/projects/WS-Hub/WS-U2net/U-2-Net/results/predict/')
-    parser.add_argument('--single', type=bool, default=True, help='test one img or not')
+                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/Segnet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-13_10:08:05/model_best.pth')
+    parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
+    parser.add_argument('--single', type=bool, default=False, help='test single img or not')
     
     args = parser.parse_args()
     main(args)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from model.attention import *
+from .attention import *
 """-------------------------------------------------Convolution----------------------------------------------"""
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
@@ -80,7 +80,7 @@ class ResConv(nn.Module):
             factor = 4 
         self.conv1 = nn.Conv2d(in_channels, in_channels // factor, kernel_size=1)
         self.conv2 = nn.Conv2d(in_channels // factor, in_channels // factor, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(in_channels // factor, out_channels, kernel_size=1)
+        self.conv3 = nn.Conv2d(in_channels // factor, out_channels, kernel_size=3, padding=1)
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
         self.relu = nn.ReLU(inplace=True)
         
@@ -171,6 +171,7 @@ class Up(nn.Module):
         super(Up, self).__init__()
         if bilinear:
             self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.conv1 = nn.Conv2d(in_channels , in_channels // 2, kernel_size=1)
             self.conv = DoubleConv(in_channels, out_channels, in_channels//2)
         else:
             self.up = nn.ConvTranspose2d(in_channels, in_channels//2, kernel_size=2, stride=2)
@@ -184,6 +185,7 @@ class Up(nn.Module):
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
                         diffY // 2, diffY - diffY // 2])
 
+        x1 = self.conv1(x1)
         x = torch.cat([x2, x1], dim=1)
         x = self.conv(x)
         return x
@@ -449,3 +451,46 @@ class PSPModule(nn.Module):
                 final = torch.cat([final, out], dim=1)
         final = torch.cat([inputs, final], dim=1)  # 将各特征图在通道维上拼接起来
         return final
+
+
+# 多尺度注意力融合 Muti-scale Attention Fusion
+class MSAF(nn.Module):
+    def __init__(self, inchannels, pool_size:list = [1, 2, 4, 8], res_blocks_num = 6):
+        super(MSAF, self).__init__()
+        self.res = ResConv(in_channels=inchannels, out_channels=inchannels//4)
+        self.se1 = SE_Block(inchannels//4)
+        self.avgpools = nn.ModuleList()
+        for size in pool_size:
+            avgpool = nn.Sequential(
+                       nn.AdaptiveAvgPool2d(size)
+                       )
+            self.avgpools.append(avgpool)
+        self.Resb = self.res_blocks(num=res_blocks_num, inchannel=inchannels)
+        self.se2 = SE_Block(inchannels)
+    
+    def res_blocks(self, num, inchannel):
+        Res_Blocks = []                # 使用nn.ModuleList来自动注册子模块
+        for i in range(num):
+            res = ResConv(inchannel, inchannel)     # 实例化ResConv
+            Res_Blocks.append(res)                  # 将实例添加到ModuleList中
+        Res_Block = nn.Sequential(*Res_Blocks)
+        return Res_Block
+
+    def forward(self, inputs):
+        outputs = []
+        shapes = inputs.shape[-2:]
+        out = None
+        for avgpool in self.avgpools:
+            x = avgpool(inputs)
+            x = self.res(x)
+            x = self.se1(x)
+            x = F.interpolate(x, size=shapes, mode='bilinear', align_corners=True)
+            if out is None:
+                out = x
+            else:
+                out = torch.cat([out, x], dim=1)
+
+        x = self.Resb(out)
+        final = self.se2(x)
+        return final
+        

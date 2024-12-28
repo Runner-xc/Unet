@@ -1,5 +1,6 @@
 #Encoder模块
 import torch.nn as nn
+from torchinfo import summary
  
 class Encoder(nn.Module):
     def __init__(self, p):
@@ -180,3 +181,9 @@ class SegNet(nn.Module):
         out = self.upsample_5(x)
 
         return out
+
+if __name__ == '__main__':
+    model = SegNet(n_classes=4, dropout_p=0)
+    summary(model,(1, 3, 256, 256))
+
+    

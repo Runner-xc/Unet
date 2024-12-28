@@ -120,7 +120,7 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "Res_unet", "SE_unet", "RDHAM_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet"], \
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "Res_unet", "SE_unet", "RDHAM_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet", "msaf_unet"], \
         f"wrong model: {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
@@ -147,6 +147,8 @@ def main(args):
         else:
             model = UNet(
                          in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "msaf_unet":
+        model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
             
     elif args.model == "Segnet":
         model = SegNet(n_classes=4, dropout_p=args.dropout_p)
@@ -542,8 +544,17 @@ def main(args):
                     "best_epoch": best_epoch,
                     "epoch": epoch,
                     "args": args}
-            torch.save(save_file, f"{save_weights_path}/model_best.pth")
-            print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")                
+            # 保存当前最佳模型的权重
+            best_model_path = f"{save_weights_path}/model_best_ep:{best_epoch}.pth"
+            torch.save(save_file, best_model_path)
+            print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")
+            # 删除之前保存的所有包含"model_best"的文件
+            path_list = os.listdir(save_weights_path)
+            for i in path_list:
+                if "model_best" in i and i != best_model_path:
+                    os.remove(os.path.join(save_weights_path, i))
+                    print(f"remove last best weight:{i}")
+                            
             current_miou = val_metrics["mIoU"][-1]
 
             # only save latest 10 epoch weights
@@ -594,8 +605,8 @@ if __name__ == '__main__':
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="pspnet", 
-                        help="u2net_full 、 u2net_lite 、 unet 、 Res_unet 、 SE_unet 、 RDHAM_unet \
+                        default="msaf_unet", 
+                        help="u2net_full, u2net_lite, unet, Res_unet, SE_unet, RDHAM_unet , msaf_unet\
                               Segnet, deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large, pspnet")
     
     parser.add_argument('--loss_fn',            type=str, 
@@ -629,7 +640,7 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=12      )
+    parser.add_argument('--batch_size',     type=int,   default=8      )
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 

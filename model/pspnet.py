@@ -78,16 +78,18 @@ class PSPNet(nn.Module):
         res = resnet50()  # 生成backbone
         self.use_aux = use_aux  # 是否用辅助分类器，True则用
         self.dropout = nn.Dropout2d(p=dropout_p)
-        self.conv = ConvBNReluLayer(in_channels=3, out_channels=64, kernel_size=7, stride=2)
-        # 全局池化
-        self.pool2d_max = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.conv = res.conv1
+        self.bn = res.bn1
+        self.relu = res.relu
+        self.pool2d_max = res.maxpool
         
         self.layer1 = res.layer1
         self.layer2 = res.layer2
         self.layer3 = res.layer3
+        self.conv2 = nn.Conv2d(1024, 128, kernel_size=1)
         self.layer4 = res.layer4
-        
-        num_channels = 2048
+        self.conv3 = nn.Conv2d(2048, 256, kernel_size=1)
+        num_channels = 256
         self.pspmodule = PSPModule(num_channels, [1, 2, 3, 6])
         
         # cls：2048*2->512->num_classes，经过PSPModule，通道数会翻倍
@@ -112,7 +114,9 @@ class PSPNet(nn.Module):
     def forward(self, inputs):
         input_size = inputs.shape[2:]  # H, W
         # inputs: [3, 1, 1]
-        x = self.conv(inputs)
+        x = self.conv(inputs)  # [64, 1/2, 1/2]
+        x = self.bn(x)
+        x = self.relu(x)
         x = self.pool2d_max(x)
 
         x = self.layer1(x)  # [256, 1/4, 1/4]
@@ -123,9 +127,11 @@ class PSPNet(nn.Module):
 
         aux_x = self.layer3(x)  # [1024, 1/16, 1/16]
         x = self.dropout(aux_x)
+        aux_x = self.conv2(x)
 
         x = self.layer4(x)  # [2048, 1/32, 1/32]
         x = self.dropout(x)
+        x = self.conv3(x)
 
         out = self.pspmodule(x)  # [4096, 1/32, 1/32]
         out = self.dropout(out)

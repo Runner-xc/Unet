@@ -4,7 +4,7 @@ unet
 import torch
 from torchinfo import summary
 import torch.nn as nn
-from .modules import *      
+from model.modules import *      
 class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
@@ -54,7 +54,7 @@ class UNet(nn.Module):
            
         x = self.center_conv(x5)    # [1, 512, 20, 20]
            
-        x = self.up1(x5, x4)        # [1, 256, 40, 40]
+        x = self.up1(x, x4)        # [1, 256, 40, 40]
         x = self.dropout(x)
         x = self.up2(x, x3)         # [1, 128, 80, 80]
         x = self.dropout(x)         
@@ -73,6 +73,115 @@ class UNet(nn.Module):
             l2_loss += torch.pow(param, 2).sum()
             
         return l1_lambda * l1_loss + l2_lambda * l2_loss
+    
+class MSAF_UNet(nn.Module):
+    def __init__(self, in_channels,
+                 n_classes,
+                 p, 
+                 base_channels=32,
+                 bilinear=True
+                 ):
+        super(MSAF_UNet, self).__init__()
+        self.in_channels = in_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+        self.base_channels = base_channels
+        self.inconv = DoubleConv(in_channels, base_channels)
+        self.down1 = Down(base_channels, base_channels*2)
+        self.msaf1 = MSAF(base_channels*2)
+        self.down2 = Down(base_channels*2, base_channels*4)
+        self.msaf2 = MSAF(base_channels*4)
+        self.down3 = Down(base_channels*4, base_channels*8)
+        self.msaf3 = MSAF(base_channels*8)
+
+        self.down4 = Down(base_channels*8, base_channels*16)
+        self.msaf4 = MSAF(base_channels*16)
+        
+        self.dropout = nn.Dropout2d(p=p)
+        self.center_conv = DoubleConv(base_channels*16, base_channels*16)
+        
+        self.up1 = Up(base_channels * 16 , base_channels * 8, bilinear=bilinear)
+        self.msaf5 = MSAF(base_channels*8)
+        self.up2 = Up(base_channels * 8, base_channels * 4 , bilinear=bilinear)
+        self.msaf6 = MSAF(base_channels*4)
+        self.up3 = Up(base_channels * 4, base_channels * 2, bilinear=bilinear)
+        self.msaf7 = MSAF(base_channels*2)
+        self.up4 = Up(base_channels * 2, base_channels, bilinear=bilinear)
+        self.msaf8 = MSAF(base_channels)
+        self.out_conv = OutConv(base_channels, n_classes)
+        
+        self.conv1 = nn.Conv2d(512, 256, kernel_size=1)
+        self.conv2 = nn.Conv2d(256, 128, kernel_size=1)
+        self.conv3 = nn.Conv2d(128, 64, kernel_size=1)
+
+    def forward(self, x):
+        e1 = self.inconv(x)                                         # [1, 32, 256, 256]
+        down, up = self.down_and_up(e1)
+
+        e2 = self.down1(e1)                                         # [1, 64, 128, 128]
+        x = self.msaf1(e2)
+        x = self.dropout(x)
+                  
+        e3 = self.down2(torch.add(x,down[0]))                       # [1, 128, 64, 64]
+        x = self.msaf2(e3)
+        x = self.dropout(x)
+        
+        e4 = self.down3(torch.add(x, down[1]))                      # [1, 256, 32, 32]
+        x = self.msaf3(e4)
+        x = self.dropout(x)
+
+        e5 = self.down4(torch.add(x,down[2]))                       # [1, 512, 16, 16]
+        x = self.msaf4(e5)
+        x = self.dropout(x)
+           
+        c5 = self.center_conv(x)                                    # [1, 512, 16, 16]
+           
+        d4 = self.up1(c5, e4)                                       # [1, 256, 32, 32]
+        d4 = self.msaf5(d4)
+        x = self.dropout(d4)
+        
+        c5_up = F.interpolate(c5, scale_factor=2, mode='bilinear')  # [1, 512, 32, 32]
+        c5_up = self.conv1(c5_up)
+        d3 = self.up2(d4 + c5_up, e3)                     # [1, 128, 80, 80]
+        d3 = self.msaf6(d3)
+        x = self.dropout(d3)
+
+        c5_up = F.interpolate(c5_up, scale_factor=2, mode='bilinear')
+        c5_up = self.conv2(c5_up)
+        d4_up = F.interpolate(d4, scale_factor=2, mode='bilinear')
+        d4_up = self.conv2(d4_up)
+        d2 = self.up3(d3 + c5_up + d4_up, e2)              # [1, 64, 160, 160]
+        d2 = self.msaf7(d2)
+        x = self.dropout(d2)
+
+        c5_up = F.interpolate(c5_up, scale_factor=2, mode='bilinear')
+        c5_up = self.conv3(c5_up)
+        d4_up = F.interpolate(d4_up, scale_factor=2, mode='bilinear')
+        d4_up = self.conv3(d4_up)
+        d3_up = F.interpolate(d3, scale_factor=2, mode='bilinear')
+        d3_up = self.conv3(d3_up)
+        d1 = self.up4(d2 + c5_up + d4_up + d3_up, e1)           # [1, 64, 320, 320]
+        d1 = self.msaf8(d1)
+        x = self.dropout(d1)
+        logits = self.out_conv(x)                       # [1, c, 320, 320]
+        
+        return logits
+
+    def down_and_up(self, x):
+        down = []
+        for i in range(3):
+            weight1 = torch.randn((self.base_channels*2**(i+1), self.base_channels*2**i, 1, 1)).to(torch.half).to('cuda')
+            x = F.conv2d(x, weight1)
+            x = F.max_pool2d(x, 2, 2)
+            down.append(x)
+
+        up = []
+        for i in range(3):
+            weight2 = torch.randn((self.base_channels*2**(3-i-1), self.base_channels*2**(3-i), 1, 1)).to(torch.half).to('cuda')
+            x = F.conv2d(x, weight2)
+            x = F.interpolate(x, scale_factor=2, mode='bilinear')
+            up.append(x)
+        return down, up
 
 class Res_UNet(nn.Module):
     def __init__(self, in_channels,
@@ -116,7 +225,7 @@ class Res_UNet(nn.Module):
         
         x = self.center_conv(x5)    # [1, 512, 16, 16]
         
-        x = self.up1(x5, x4)        # [1, 256, 32, 32]
+        x = self.up1(x, x4)        # [1, 256, 32, 32]
         x = self.dropout(x)         # dropout层
         x = self.up2(x, x3)         # [1, 128, 64, 64]
         x = self.dropout(x)         # dropout层
@@ -172,7 +281,7 @@ class RDHAM_UNet(nn.Module):
         x = self.ham(x5)            # [1, 512, 16, 16]
         x = self.center_conv(x5)    # [1, 512, 16, 16]
         
-        x = self.up1(x5, x4)        # [1, 256, 32, 32]
+        x = self.up1(x, x4)        # [1, 256, 32, 32]
         x = self.dropout(x)         # dropout层
         x = self.up2(x, x3)         # [1, 128, 64, 64]
         x = self.dropout(x)         # dropout层
@@ -245,7 +354,7 @@ class SE_UNet(nn.Module):
 
         x = self.center_conv(x5)    # [1, 512, 16, 16]
            
-        x = self.up1(x5, x4)        # [1, 256, 32, 32]
+        x = self.up1(x, x4)        # [1, 256, 32, 32]
         x = self.dropout(x)         
         x = self.up2(x, x3)         # [1, 128, 64, 64]
         x = self.dropout(x)         
@@ -270,7 +379,9 @@ class SE_UNet(nn.Module):
         return l1_lambda * l1_loss + l2_lambda * l2_loss
             
 if __name__ == '__main__':
-    model = SE_UNet(in_channels=3, n_classes=4, p=0.25)
+    model = MSAF_UNet(in_channels=3, n_classes=4, p=0.25)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
     x = torch.randn(1,3,320,320)
     # output = model(x)
     # print(model)
