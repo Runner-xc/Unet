@@ -71,7 +71,10 @@ def main(args):
 
     elif args.model_name == "deeplabv3":
         model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
-        
+    
+    elif args.model_name == "msaf_unet":
+        model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
+
     else:
         raise ValueError(f"model name error")
     
@@ -93,7 +96,7 @@ def main(args):
         img = np.array(img)
         
         img = torchvision.transforms.ToTensor()(img)
-        # img = torchvision.transforms.Resize((1000,1000))(img)
+        # img = torchvision.transforms.Resize((2048,1792))(img)
         img = img.to(device)
         img = img.unsqueeze(0)
         logits = model(img)
@@ -106,7 +109,7 @@ def main(args):
         # 保存图片
         if not os.path.exists("single_predict/"):
             os.mkdir("single_predict/")
-        pred_img_pil.save(f"single_predict/deeplabv3.png")        
+        pred_img_pil.save(f"single_predict/msaf_unet_A-M.png")        
         print("预测完成!")
        
     else:
@@ -187,11 +190,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='Segnet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3')
+    parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3, msaf_unet')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/Segnet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-13_10:08:05/model_best.pth')
+                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-01-06_15:47:41/model_best_ep:31.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
-    parser.add_argument('--single', type=bool, default=False, help='test single img or not')
+    parser.add_argument('--single', type=bool, default=True, help='test single img or not')
     
     args = parser.parse_args()
     main(args)

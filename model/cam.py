@@ -3,8 +3,11 @@ unet
 """
 import os
 import torch
-from model.unet import *
-from model.u2net import u2net_full_config
+from unet import *
+from u2net import u2net_full_config
+from Segnet import *
+from deeplabv3_model import *
+from pspnet import *
 import torch.nn.functional as F
 from PIL import Image
 import numpy as np
@@ -34,7 +37,7 @@ class SemanticSegmentationTarget:
         return (model_output[self.category, :, : ] * self.mask).sum()
 
 # 加载图像
-img_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg"
+img_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg"
 img = Image.open(img_path).resize((224,224)).convert('RGB')
 
 # 预处理图像
@@ -46,19 +49,19 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/ResD_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-11-06_22:26:31_策略4（更改ResD）/model_best.pth'
+weights_path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/deeplabv3_resnet50/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-18_15:55:59/model_best.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
 # 创建模型实例
-model_name = {'ResD_unet': ResD_UNet, 'SED_unet': SED_UNet, 'unet': UNet}
-model = model_name['ResD_unet'](in_channels=3, n_classes=4, p=0)
+model_name = {'segnet': SegNet, 'pspnet': PSPNet, 'deeplabv3' : deeplabv3_resnet50,'unet': UNet}
+# model = UNet(in_channels=3, n_classes=4, p=0)
 
-# model = DL_UNet(in_channels=3, n_classes=4, p=0)
+# model = SegNet(dropout_p=0, n_classes=4)
 
-# model = SED_UNet(in_channels=3, n_classes=4, p=0)
+# model = PSPNet(num_classes=4, dropout_p=0, use_aux=False)
 
-# model = u2net_full_config()
+model = deeplabv3_resnet50(aux=False, num_classes=4)
 
 # 加载模型权重
 model.load_state_dict(state_dict)
@@ -70,6 +73,8 @@ if torch.cuda.is_available():
     input_tensor = input_tensor.cuda()
     
 output = model(input_tensor)
+if isinstance(output, dict):
+    output = output['out']
 
 # 模型输出为字典
 # model = SegmentationModelOutputWrapper(model)
@@ -105,9 +110,9 @@ IP_mask_float = np.float32(IP_mask == IP_category)
 # 指定目标层
 # target_layers = [model.up4.conv]
 
-# target_layers = [model.up4.conv]
+# target_layers = [model.upsample_5]
 
-target_layers = [model.out_conv]
+target_layers = [model.classifier]
 
 # OM
 OM_targets = [SemanticSegmentationTarget(OM_category, OM_mask_float)]
@@ -136,9 +141,9 @@ with GradCAM(model=model,
                         targets=IP_targets)[0, :]
     IP_cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
-name = "ResD_unet_Dice_Cos_lr:8e-4_wd_1e-6_dropout:0.5"    
+name = "deeplabv3"    
 # 保存图片
-save_path = "/mnt/c/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img/"
+save_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img"
 OM_cam_img = Image.fromarray(OM_cam_image)
 OM_cam_img.save(os.path.join(save_path, f"{name}_OM.jpg"))
 

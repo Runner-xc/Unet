@@ -1,9 +1,9 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from model.modules import *
+from .modules import *
 from torchinfo import summary
-from model.resnet_backbone import *
+from .resnet_backbone import *
 
 class ConvBNReluLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, groups=1, dilation=1, padding=None, name=None):
@@ -151,3 +151,4 @@ if __name__ == '__main__':
     summary(model=net)
     print(heatmap.shape)
     print(aux.shape)
+    

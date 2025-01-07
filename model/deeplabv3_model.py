@@ -5,8 +5,8 @@ from typing import Dict, List
 import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
-from model.resnet_backbone import resnet50, resnet101
-from model.mobilenet_backbone import mobilenet_v3_large
+from .resnet_backbone import resnet50, resnet101
+from .mobilenet_backbone import mobilenet_v3_large
 from torchinfo import summary
 
 

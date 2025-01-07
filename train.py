@@ -249,7 +249,7 @@ def main(args):
         
     # 损失函数
     
-    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss']
+    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss']
     if args.loss_fn == 'CrossEntropyLoss':
         loss_fn = CrossEntropyLoss()
     elif args.loss_fn == 'DiceLoss':
@@ -260,6 +260,8 @@ def main(args):
         loss_fn = WDiceLoss()
     elif args.loss_fn == 'DWDLoss':
         loss_fn = DWDLoss()
+    elif args.loss_fn == 'IoULoss':
+        loss_fn = IOULoss()
     
     # 缩放器
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
@@ -551,7 +553,7 @@ def main(args):
             # 删除之前保存的所有包含"model_best"的文件
             path_list = os.listdir(save_weights_path)
             for i in path_list:
-                if "model_best" in i and i != best_model_path:
+                if "model_best" in i and i != f"model_best_ep:{best_epoch}.pth":
                     os.remove(os.path.join(save_weights_path, i))
                     print(f"remove last best weight:{i}")
                             
@@ -579,6 +581,7 @@ def main(args):
             print('恭喜你触发早停！！')
             
             break
+        
         
     writer.close()
     total_time = time.time() - initial_time
@@ -611,7 +614,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--loss_fn',            type=str, 
                         default='DiceLoss', 
-                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWDLoss'")
+                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss'.")
     
     parser.add_argument('--optimizer',          type=str, 
                         default='AdamW', 
@@ -632,15 +635,15 @@ if __name__ == '__main__':
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=8      )
+    parser.add_argument('--batch_size',     type=int,   default=16      ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 
