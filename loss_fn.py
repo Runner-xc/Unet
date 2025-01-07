@@ -100,7 +100,56 @@ class DiceLoss():
         loss_dict['Inorganic pores'] = loss[2]
 
         return loss_dict
-    
+
+class IOULoss():
+    def __init__(self, smooth=1e-5):
+        """
+        smooth: 平滑值
+        """
+        self.smooth = smooth
+        self.class_names = [
+                            'Organic matter', 
+                            'Organic pores', 
+                            'Inorganic pores']
+        self.labels = {
+            'Organic matter':0,
+            'Organic pores':1,
+            'Inorganic pores':2
+        }
+        self.num_classes = len(self.class_names)
+
+    def __call__(self, logits, targets):
+        """
+        img_pred: 预测值 (batch, 4, h, w)
+        img_mask: 标签值 (batch, h, w)
+        """
+        num_classes = logits.shape[1]
+        tensor_one = torch.tensor(1)
+
+        # logits argmax 
+        logits = torch.softmax(logits, dim=1)  # 不能直接使用argmax，会丢失grad_fn,因为argmax不可导
+        # targets: (b, h, w) -> (b, c, h, w)
+        targets = targets.to(torch.int64)
+        targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()  
+        logits = logits[:, 1:, ...]
+        targets = targets[:, 1:, ...]
+        # 计算总的损失
+        intersection = (logits * targets).sum(dim=(0,-2,-1))
+        union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
+        iou =  intersection / (union - intersection + self.smooth)
+        loss = tensor_one - iou
+        total_loss = loss.sum() / num_classes
+        
+        # 计算每个类别的损失
+        loss_dict = {}
+        loss_dict['total_loss'] = total_loss
+        loss_dict['Organic matter'] = loss[0]
+        loss_dict['Organic pores'] = loss[1]
+        loss_dict['Inorganic pores'] = loss[2]
+
+        return loss_dict
+
+        
 class Focal_Loss():
     """
     γ : 聚焦因子,用于控制损失的敏感度
