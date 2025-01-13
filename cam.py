@@ -3,11 +3,11 @@ unet
 """
 import os
 import torch
-from unet import *
-from u2net import u2net_full_config
-from Segnet import *
-from deeplabv3_model import *
-from pspnet import *
+from model.unet import *
+from model.u2net import u2net_full_config
+from model.Segnet import *
+from model.deeplabv3_model import *
+from model.pspnet import *
 import torch.nn.functional as F
 from PIL import Image
 import numpy as np
@@ -49,7 +49,7 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/deeplabv3_resnet50/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-18_15:55:59/model_best.pth'
+weights_path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-01-03_17:21:21/model_best_ep:19.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
@@ -61,7 +61,8 @@ model_name = {'segnet': SegNet, 'pspnet': PSPNet, 'deeplabv3' : deeplabv3_resnet
 
 # model = PSPNet(num_classes=4, dropout_p=0, use_aux=False)
 
-model = deeplabv3_resnet50(aux=False, num_classes=4)
+# model = deeplabv3_resnet50(aux=False, num_classes=4)
+model = MSAF_UNet(in_channels=3, n_classes=4, p=0)
 
 # 加载模型权重
 model.load_state_dict(state_dict)
@@ -112,7 +113,7 @@ IP_mask_float = np.float32(IP_mask == IP_category)
 
 # target_layers = [model.upsample_5]
 
-target_layers = [model.classifier]
+target_layers = [model.out_conv]
 
 # OM
 OM_targets = [SemanticSegmentationTarget(OM_category, OM_mask_float)]
@@ -141,7 +142,7 @@ with GradCAM(model=model,
                         targets=IP_targets)[0, :]
     IP_cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
-name = "deeplabv3"    
+name = "U-Net_m"    
 # 保存图片
 save_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img"
 OM_cam_img = Image.fromarray(OM_cam_image)

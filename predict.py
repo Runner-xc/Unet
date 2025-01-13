@@ -109,7 +109,7 @@ def main(args):
         # 保存图片
         if not os.path.exists("single_predict/"):
             os.mkdir("single_predict/")
-        pred_img_pil.save(f"single_predict/msaf_unet_A-M.png")        
+        pred_img_pil.save(f"single_predict/msaf_unet_A_cat_M+DW.png")        
         print("预测完成!")
        
     else:
@@ -192,7 +192,7 @@ if __name__ == '__main__':
     parser.add_argument('--base_size', type=int, default=256)
     parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3, msaf_unet')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-01-06_15:47:41/model_best_ep:31.pth')
+                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-01-13_09:26:21(A_cat_M+DW)/model_best_ep:18.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
     parser.add_argument('--single', type=bool, default=True, help='test single img or not')
     

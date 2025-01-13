@@ -3,9 +3,7 @@ unet
 """
 import torch
 from torchinfo import summary
-from .attention import EMA
 import torch.nn as nn
-from .modules import *   
 from tensorboardX import SummaryWriter   
 class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -88,39 +86,53 @@ class MSAF_UNet(nn.Module):
         self.bilinear = bilinear
         self.base_channels = base_channels
         self.inconv = DoubleConv(in_channels, base_channels)
-        self.down1 = Down(base_channels, base_channels*2)
-
+        # 编码器
+        self.down1 = DWDown(base_channels, base_channels*2)
         self.msaf1 = EMAF(base_channels*2)
         self.acpn1 = ACPN(base_channels*2)
+        self.conv1 = nn.Conv2d(base_channels*4, base_channels*2, kernel_size=1)
 
-        self.down2 = ResD_Down(base_channels*2, base_channels*4)
+        self.down2 = DWResD_Down(base_channels*2, base_channels*4)
         self.msaf2 = EMAF(base_channels*4)
         self.acpn2 = ACPN(base_channels*4)
+        self.conv2 = nn.Conv2d(base_channels*8, base_channels*4, kernel_size=1)
 
-        self.down3 = ResD_Down(base_channels*4, base_channels*8)
+        self.down3 = DWResD_Down(base_channels*4, base_channels*8)
         self.msaf3 = EMAF(base_channels*8)
-        self.acpn3 = ACPN(base_channels*8)
+        # self.acpn3 = ACPN(base_channels*8)
+        self.conv3 = nn.Conv2d(base_channels*16, base_channels*8, kernel_size=1)
 
-        self.down4 = ResD_Down(base_channels*8, base_channels*16)
+        self.down4 = DWResD_Down(base_channels*8, base_channels*16)
         self.msaf4 = EMAF(base_channels*16)
-        self.acpn4 = ACPN(base_channels*16)
+        # self.acpn4 = ACPN(base_channels*16)
+        self.conv4 = nn.Conv2d(base_channels*32, base_channels*16, kernel_size=1)
         
         self.dropout = nn.Dropout2d(p=p)
         self.center_conv = DoubleConv(base_channels*16, base_channels*16)
         
-        self.up1 = ResD_Up(base_channels * 16 , base_channels * 8, bilinear=bilinear)
+        # 解码器
+        self.up1 = DWResD_Up(base_channels * 16 , base_channels * 8, bilinear=bilinear)
         self.msaf5 = EMAF(base_channels*8)
-        self.up2 = ResD_Up(base_channels * 8, base_channels * 4 , bilinear=bilinear)
+
+        self.up2 = DWResD_Up(base_channels * 8, base_channels * 4 , bilinear=bilinear)
         self.msaf6 = EMAF(base_channels*4)
-        self.up3 = ResD_Up(base_channels * 4, base_channels * 2, bilinear=bilinear)
+
+        self.up3 = DWResD_Up(base_channels * 4, base_channels * 2, bilinear=bilinear)
+        self.acpn7 = ACPN(base_channels*2)
         self.msaf7 = EMAF(base_channels*2)
-        self.up4 = Up(base_channels * 2, base_channels, bilinear=bilinear)
+        self.conv7 = nn.Conv2d(base_channels*4, base_channels*2, kernel_size=1)
+
+        self.up4 = DWUp(base_channels * 2, base_channels, bilinear=bilinear)
         self.msaf8 = EMAF(base_channels)
+        self.acpn8 = ACPN(base_channels)
+        self.conv8 = nn.Conv2d(base_channels*2, base_channels, kernel_size=1)
+
+        # 输出层
         self.out_conv = OutConv(base_channels, n_classes)
         
-        self.conv1 = nn.Conv2d(512, 256, kernel_size=1)
-        self.conv2 = nn.Conv2d(256, 128, kernel_size=1)
-        self.conv3 = nn.Conv2d(128, 64, kernel_size=1)
+        # self.conv1 = nn.Conv2d(512, 256, kernel_size=1)
+        # self.conv2 = nn.Conv2d(256, 128, kernel_size=1)
+        # self.conv3 = nn.Conv2d(128, 64, kernel_size=1)
 
     def forward(self, x):
         e1 = self.inconv(x)                             # [b, 32, 256, 256]
@@ -129,26 +141,28 @@ class MSAF_UNet(nn.Module):
         e2 = self.down1(e1)                             # [b, 64, 128, 128]
         m = self.msaf1(e2)
         a = self.acpn1(e2)
-        e2 = m + a
+        e2 = torch.cat([m, a], dim=1)
+        e2 = self.conv1(e2)
         x = self.dropout(e2)
                   
         e3 = self.down2(x)                              # [b, 128, 64, 64]
         m = self.msaf2(e3)
         a = self.acpn2(e3)
-        e3 = m + a
+        e3 = torch.cat([m, a], dim=1)
+        e3 = self.conv2(e3)
         x = self.dropout(e3)
         
         e4 = self.down3(x)                              # [b, 256, 32, 32]
         m = self.msaf3(e4)
-        a = self.acpn3(e4)
-        e4 = m + a
-        x = self.dropout(e4)
+        # a = self.acpn3(e4)
+        # e4 = torch.cat([m, a], dim=1)
+        x = self.dropout(m)
 
         e5 = self.down4(x)                              # [b, 512, 16, 16]
         m = self.msaf4(e5)
-        a = self.acpn4(e5)
-        e5 = m + a
-        x = self.dropout(e5)
+        # a = self.acpn4(e5)
+        # e5 = torch.cat([m, a], dim=1)
+        x = self.dropout(m)
            
         c5 = self.center_conv(x)                                    # [b, 512, 16, 16]
            
@@ -167,7 +181,10 @@ class MSAF_UNet(nn.Module):
         # d4_up = F.interpolate(d4, scale_factor=2, mode='bilinear')
         # d4_up = self.conv2(d4_up)
         d2 = self.up3(d3, e2)              # [b, 64, 160, 160]
-        d2 = self.msaf7(d2)
+        m = self.msaf7(d2)
+        a = self.acpn7(d2)
+        d2 = torch.cat([m, a], dim=1)
+        d2 = self.conv7(d2)
         x = self.dropout(d2)
 
         # c5_up = F.interpolate(c5_up, scale_factor=2, mode='bilinear')
@@ -177,27 +194,30 @@ class MSAF_UNet(nn.Module):
         # d3_up = F.interpolate(d3, scale_factor=2, mode='bilinear')
         # d3_up = self.conv3(d3_up)
         d1 = self.up4(d2, e1)                           # [1, 64, 320, 320]
-        d1 = self.msaf8(d1)
+        m = self.msaf8(d1)
+        a = self.acpn8(d1)
+        d1 = torch.cat([m, a], dim=1)
+        d1 = self.conv8(d1)
         x = self.dropout(d1)
         logits = self.out_conv(x)                       # [1, c, 320, 320]
         
         return logits
 
-    def down_and_up(self, x):
-        down = []
-        for i in range(3):
-            weight1 = torch.randn((self.base_channels*2**(i+1), self.base_channels*2**i, 1, 1)).to('cuda')
-            x = F.conv2d(x, weight1)
-            x = F.max_pool2d(x, 2, 2)
-            down.append(x)
+    # def down_and_up(self, x):
+    #     down = []
+    #     for i in range(3):
+    #         weight1 = torch.randn((self.base_channels*2**(i+1), self.base_channels*2**i, 1, 1)).to('cuda')
+    #         x = F.conv2d(x, weight1)
+    #         x = F.max_pool2d(x, 2, 2)
+    #         down.append(x)
 
-        up = []
-        for i in range(3):
-            weight2 = torch.randn((self.base_channels*2**(3-i-1), self.base_channels*2**(3-i), 1, 1)).to('cuda')
-            x = F.conv2d(x, weight2)
-            x = F.interpolate(x, scale_factor=2, mode='bilinear')
-            up.append(x)
-        return down, up
+    #     up = []
+    #     for i in range(3):
+    #         weight2 = torch.randn((self.base_channels*2**(3-i-1), self.base_channels*2**(3-i), 1, 1)).to('cuda')
+    #         x = F.conv2d(x, weight2)
+    #         x = F.interpolate(x, scale_factor=2, mode='bilinear')
+    #         up.append(x)
+    #     return down, up
 
 class Res_UNet(nn.Module):
     def __init__(self, in_channels,
@@ -395,13 +415,14 @@ class SE_UNet(nn.Module):
         return l1_lambda * l1_loss + l2_lambda * l2_loss
             
 if __name__ == '__main__':
+    from attention import EMA
+    from modules import *   
     model = MSAF_UNet(in_channels=3, n_classes=4, p=0.25)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     x = torch.randn(3,320,320)
-    # output = model(x)
-    # print(model)
-    # with SummaryWriter("msaf_unet") as writer:
-    #     writer.add_graph(model, x)
     summary(model)
-    
+else:
+    from .attention import *
+    from .modules import * 
+        
