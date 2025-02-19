@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
 import os
+from monai.losses import DiceLoss, HausdorffDTLoss
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
@@ -52,7 +53,7 @@ class CrossEntropyLoss():
         
         return loss_dict
     
-class DiceLoss():
+class diceloss():
     
     def __init__(self, smooth=1e-5):
         """
@@ -149,6 +150,59 @@ class IOULoss():
 
         return loss_dict
 
+class AdaptiveSegLoss(nn.Module):
+    def __init__(self, num_classes, init_alpha=0.5):
+        """
+        num_classes: 类别数(包含背景)
+        """
+        super().__init__()
+        # 每个类别独立的可学习参数
+        self.alphas = nn.Parameter(torch.ones(num_classes-1)*init_alpha, 
+                                  requires_grad=True)
+        
+        # 初始化基础损失函数
+        self.dice_loss = DiceLoss(include_background=False,  
+                                reduction='none')  # 关闭默认reduction
+        self.hd_loss = HausdorffDTLoss(include_background=False, 
+                                     reduction='none')  # 关闭默认reduction
+        
+        # # 可学习的缩放参数
+        # self.beta = nn.Parameter(torch.tensor(0.001), requires_grad=True)
+        
+        self.names = ['Organic matter', 'Organic pores', 'Inorganic pores']
+        assert len(self.names) == num_classes-1, "类别名数量不匹配"
+
+    def forward(self, y_pred, y_true):
+        """
+        y_pred: [B, C, H, W] 未经 softmax
+        y_true: [B, 1, H, W] 或 [B, H, W] (值为0~C-1的整数)
+        """
+        # 预处理
+        B, C, H, W = y_pred.shape
+        y_pred = F.softmax(y_pred, dim=1)  # [B,C,H,W]
+        y_true_oh = F.one_hot(y_true.squeeze(1), num_classes=C).permute(0,3,1,2).float()  # [B,C,H,W]
+        
+        # 计算各通道损失（排除背景）
+        dice = self.dice_loss(y_pred, y_true_oh)
+        dice = dice.flatten(start_dim=2).squeeze(-1)  # [B,C-1]
+        
+        hd = self.hd_loss(y_pred, y_true_oh)
+        hd = hd.flatten(start_dim=2).squeeze(-1)  # [B,C-1]
+        # scaled_hd = self.beta * hd
+        
+        # 动态权重计算
+        alphas = torch.sigmoid(self.alphas).to(y_pred.device)  # [C-1,]
+        
+        # 逐类别加权
+        class_losses = alphas * dice.mean(dim=0) + (1 - alphas) * hd.mean(dim=0)
+        
+        # 汇总损失
+        loss_dict = {
+            'total_loss': class_losses.mean(),
+            **{name: loss for name, loss in zip(self.names, class_losses)}
+        }
+        
+        return loss_dict
         
 class Focal_Loss():
     """
@@ -207,12 +261,6 @@ class Focal_Loss():
 
         return loss_dict
 
-            
-"""
-ELoss  # TODO: 待实验
-
-"""
-
 class WDiceLoss():
     
     def __init__(self, smooth=1e-5):
@@ -231,7 +279,7 @@ class WDiceLoss():
         }
         self.num_classes = len(self.class_names)
 
-    def __call__(self, logits, targets, weights=[0.3,0.3,0.4]):
+    def __call__(self, logits, targets, weights=[0.1,0.2,0.7]):
         """
         img_pred: 预测值 (batch, 4, h, w)
         img_mask: 标签值 (batch, h, w)
@@ -240,14 +288,7 @@ class WDiceLoss():
         tensor_one = torch.tensor(1)
         # logits argmax 
         preds = torch.softmax(logits, dim=1)
-        list_2 = []
-        # 计算权重
-        for i in range(1,num_classes):           
-            # single_weight
-            pred = preds[:, i, ...]
-            x = pred * (targets==i)
-            x = x.mean()
-            list_2.append(x)
+
         # targets: (b, h, w) -> (b, c, h, w)
         targets = targets.to(torch.int64)
         targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()     
@@ -264,8 +305,7 @@ class WDiceLoss():
             dice = (2 * intersection) / (union + self.smooth)
             loss = tensor_one - dice
             # 加权
-            zz = list_2[i-1]*(list_2[i-1] - 1) # 正则项
-            loss = loss*(1 - (weights[i-1]**(1 - list_2[i-1]) + zz))
+            loss = loss * weights[i-1]
             loss_dict[names[i-1]] = loss 
             total_loss += loss 
 
@@ -332,42 +372,6 @@ class DWDLoss(nn.Module):
         loss_dict['total_loss'] = total_loss
         return loss_dict  
 
-class TotalLoss(nn.Module):
-    """
-    loss_fn: 支持的损失函数类型，如 'dice'、'boundary'、'focal'、'distance_based'
-    """
-    def __init__(self, flag: bool = False, loss_fn: str = None):
-        super().__init__()
-        self.flag = flag
-        self.dice_loss = DiceLoss()
-        # self.boundary_loss = SurfaceLoss()
-        self.focal_loss = Focal_Loss()
-        # self.distance_based_loss = DistanceBasedLoss()  # 修改命名风格
-        
-        # 校验 loss_fn 参数的有效性
-        if loss_fn is not None and loss_fn not in ['dice_loss', 'boundary_loss', 'focal_loss', 'distance_based_loss']:
-            raise ValueError(f"Invalid loss function: {loss_fn}. Supported values are 'dice', 'boundary', 'focal', 'distance_based'.")
-        self.loss_fn = loss_fn
-
-    def __call__(self, pred, labels):
-        # 判断是否使用多个损失函数组合
-        if self.flag:
-            return (self.dice_loss(pred, labels) + self.boundary_loss(pred, labels) + self.focal_loss(pred, labels))
-        else:
-            if self.loss_fn == 'dice':
-                return self.dice_loss(pred, labels)
-            # 'boundary'
-            elif self.loss_fn == 'boundary':
-                return self.boundary_loss(pred, labels)
-            # 'focal'
-            elif self.loss_fn == 'focal':
-                return self.focal_loss(pred, labels)
-            # 'distance_based'
-            elif self.loss_fn == 'distance_based':
-                return self.distance_based_loss(pred, labels)
-            
-            else:
-                raise ValueError(f"Invalid loss function: {self.loss_fn}")
             
 
 # if __name__ == '__main__':

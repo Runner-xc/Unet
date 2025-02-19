@@ -54,6 +54,10 @@ class SEM_DATA(Dataset):
         df = pd.read_csv(self.data_path)
         return len(df)
     
+    def __getitem__(self, index):
+        data = self.load_data(index=index)
+        return data
+    
     # 加载数据集
     def load_data(self, index):
         
@@ -71,6 +75,7 @@ class SEM_DATA(Dataset):
         img = Image.open(img_path).convert('RGB')
         mask = Image.open(mask_path).convert('L')   # 将mask转换为灰度图像, 不然会多一个维度
         img_array = np.array(img)
+        img_name = os.path.basename(img_path)
         # # 归一化图片
         img_array = img_array / 255.0 
         img_array = img_array.astype(np.float32)
@@ -87,14 +92,11 @@ class SEM_DATA(Dataset):
         # mask_tensor = torch.tensor(mask_array)
 
         if self.transforms is not None:
-            data = self.transforms(img_array, mask_array)
+            data = self.transforms(img_array, mask_array) 
+            
+        return data, img_name
 
-        return data
-
-    def __getitem__(self, index):
-        data = self.load_data(index=index)
-
-        return data
+    
           
 if __name__ == '__main__':
     #数据集路径

@@ -249,11 +249,11 @@ def main(args):
         
     # 损失函数
     
-    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss']
+    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd']
     if args.loss_fn == 'CrossEntropyLoss':
         loss_fn = CrossEntropyLoss()
     elif args.loss_fn == 'DiceLoss':
-        loss_fn = DiceLoss()
+        loss_fn = diceloss()
     elif args.loss_fn == 'FocalLoss':
         loss_fn = Focal_Loss()
     elif args.loss_fn == 'WDiceLoss':
@@ -262,6 +262,8 @@ def main(args):
         loss_fn = DWDLoss()
     elif args.loss_fn == 'IoULoss':
         loss_fn = IOULoss()
+    elif args.loss_fn == 'dice_hd':
+        loss_fn = AdaptiveSegLoss(num_classes=4)
     
     # 缩放器
     scaler = torch.cuda.amp.GradScaler() if args.amp else None
@@ -614,7 +616,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--loss_fn',            type=str, 
                         default='DiceLoss', 
-                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss'.")
+                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd'")
     
     parser.add_argument('--optimizer',          type=str, 
                         default='AdamW', 
@@ -643,7 +645,7 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=8      ) 
+    parser.add_argument('--batch_size',     type=int,   default=16      ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 

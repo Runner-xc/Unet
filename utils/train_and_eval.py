@@ -69,7 +69,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
     
     for data in train_dataloader: 
         # 获取训练数据集的一个batch
-        images, masks = data
+        images, masks = data[0], data[1]
         images, masks = images.to(device), masks.to(device)
         # 梯度清零
         optimizer.zero_grad()

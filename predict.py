@@ -96,7 +96,7 @@ def main(args):
         img = np.array(img)
         
         img = torchvision.transforms.ToTensor()(img)
-        # img = torchvision.transforms.Resize((2048,1792))(img)
+        # img = torchvision.transforms.Resize((1024,1024))(img)
         img = img.to(device)
         img = img.unsqueeze(0)
         logits = model(img)
@@ -109,7 +109,7 @@ def main(args):
         # 保存图片
         if not os.path.exists("single_predict/"):
             os.mkdir("single_predict/")
-        pred_img_pil.save(f"single_predict/msaf_unet_A_cat_M+DW.png")        
+        pred_img_pil.save(f"single_predict/unet_1.png")        
         print("预测完成!")
        
     else:
@@ -118,13 +118,13 @@ def main(args):
             model.eval()
             Metric_list = np.zeros((6, 4))
             test_loader = tqdm(test_loader, desc=f"  Validating  😀", leave=False)
-            count = 0
             save_path = f"{args.save_path}/{args.model_name}"
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
                 
             for data in test_loader:
                 images, masks = data[0].to(device), data[1].to(device)
+                img_name = data[2]
                 logits = model(images)  # [1, 4, 320, 320]
                 masks = masks.to(torch.int64)
                 masks = masks.squeeze(1)
@@ -154,8 +154,7 @@ def main(args):
                 # 保存图片
                 if not os.path.exists(f"{save_path}/pred_img/"):
                     os.makedirs(f"{save_path}/pred_img/")
-                pred_img_pil.save(f"{save_path}/pred_img/{count}.png")
-                count += 1
+                pred_img_pil.save(f"{save_path}/pred_img/{os.path.splitext(img_name)[0]}.png")
             Metric_list /= len(test_loader)
         metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
         metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
@@ -192,9 +191,9 @@ if __name__ == '__main__':
     parser.add_argument('--base_size', type=int, default=256)
     parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3, msaf_unet')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-01-13_09:26:21(A_cat_M+DW)/model_best_ep:18.pth')
+                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-18_18:07:44/model_best_ep:85.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
-    parser.add_argument('--single', type=bool, default=True, help='test single img or not')
+    parser.add_argument('--single', type=bool, default=False, help='test single img or not')
     
     args = parser.parse_args()
     main(args)

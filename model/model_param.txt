@@ -1,96 +1,115 @@
 # Unet
-==========================================================================================
-Layer (type:depth-idx)                   Output Shape              Param #
-==========================================================================================
-UNet                                     [1, 4, 224, 224]          --
-├─DoubleConv: 1-1                        [1, 32, 224, 224]         --
-│    └─Sequential: 2-1                   [1, 32, 224, 224]         --
-│    │    └─Conv2d: 3-1                  [1, 32, 224, 224]         896
-│    │    └─BatchNorm2d: 3-2             [1, 32, 224, 224]         64
-│    └─Sequential: 2-2                   --                        (recursive)
-│    │    └─ReLU: 3-3                    [1, 32, 224, 224]         --
-│    └─Sequential: 2-3                   [1, 32, 224, 224]         --
-│    │    └─Conv2d: 3-4                  [1, 32, 224, 224]         9,248
-│    │    └─BatchNorm2d: 3-5             [1, 32, 224, 224]         64
-│    │    └─ReLU: 3-6                    [1, 32, 224, 224]         --
-├─Down: 1-2                              [1, 64, 112, 112]         --
-│    └─MaxPool2d: 2-4                    [1, 32, 112, 112]         --
-│    └─DoubleConv: 2-5                   [1, 64, 112, 112]         --
-│    │    └─Sequential: 3-7              [1, 64, 112, 112]         18,624
-│    │    └─Sequential: 3-8              --                        (recursive)
-│    │    └─Sequential: 3-9              [1, 64, 112, 112]         37,056
-├─Dropout2d: 1-3                         [1, 64, 112, 112]         --
-├─Down: 1-4                              [1, 128, 56, 56]          --
-│    └─MaxPool2d: 2-6                    [1, 64, 56, 56]           --
-│    └─DoubleConv: 2-7                   [1, 128, 56, 56]          --
-│    │    └─Sequential: 3-10             [1, 128, 56, 56]          74,112
-│    │    └─Sequential: 3-11             --                        (recursive)
-│    │    └─Sequential: 3-12             [1, 128, 56, 56]          147,840
-├─Dropout2d: 1-5                         [1, 128, 56, 56]          --
-├─Down: 1-6                              [1, 256, 28, 28]          --
-│    └─MaxPool2d: 2-8                    [1, 128, 28, 28]          --
-│    └─DoubleConv: 2-9                   [1, 256, 28, 28]          --
-│    │    └─Sequential: 3-13             [1, 256, 28, 28]          295,680
-│    │    └─Sequential: 3-14             --                        (recursive)
-│    │    └─Sequential: 3-15             [1, 256, 28, 28]          590,592
-├─Dropout2d: 1-7                         [1, 256, 28, 28]          --
-├─Down: 1-8                              [1, 256, 14, 14]          --
-│    └─MaxPool2d: 2-10                   [1, 256, 14, 14]          --
-│    └─DoubleConv: 2-11                  [1, 256, 14, 14]          --
-│    │    └─Sequential: 3-16             [1, 256, 14, 14]          590,592
-│    │    └─Sequential: 3-17             --                        (recursive)
-│    │    └─Sequential: 3-18             [1, 256, 14, 14]          590,592
-├─DoubleConv: 1-9                        [1, 512, 14, 14]          --
-│    └─Sequential: 2-12                  [1, 512, 14, 14]          --
-│    │    └─Conv2d: 3-19                 [1, 512, 14, 14]          1,180,160
-│    │    └─BatchNorm2d: 3-20            [1, 512, 14, 14]          1,024
-│    └─Sequential: 2-13                  --                        (recursive)
-│    │    └─ReLU: 3-21                   [1, 512, 14, 14]          --
-│    └─Sequential: 2-14                  [1, 512, 14, 14]          --
-│    │    └─Conv2d: 3-22                 [1, 512, 14, 14]          2,359,808
-│    │    └─BatchNorm2d: 3-23            [1, 512, 14, 14]          1,024
-│    │    └─ReLU: 3-24                   [1, 512, 14, 14]          --
-├─Up: 1-10                               [1, 128, 28, 28]          --
-│    └─Upsample: 2-15                    [1, 256, 28, 28]          --
-│    └─DoubleConv: 2-16                  [1, 128, 28, 28]          --
-│    │    └─Sequential: 3-25             [1, 256, 28, 28]          1,180,416
-│    │    └─Sequential: 3-26             --                        (recursive)
-│    │    └─Sequential: 3-27             [1, 128, 28, 28]          295,296
-├─Dropout2d: 1-11                        [1, 128, 28, 28]          --
-├─Up: 1-12                               [1, 64, 56, 56]           --
-│    └─Upsample: 2-17                    [1, 128, 56, 56]          --
-│    └─DoubleConv: 2-18                  [1, 64, 56, 56]           --
-│    │    └─Sequential: 3-28             [1, 128, 56, 56]          295,296
-│    │    └─Sequential: 3-29             --                        (recursive)
-│    │    └─Sequential: 3-30             [1, 64, 56, 56]           73,920
-├─Dropout2d: 1-13                        [1, 64, 56, 56]           --
-├─Up: 1-14                               [1, 32, 112, 112]         --
-│    └─Upsample: 2-19                    [1, 64, 112, 112]         --
-│    └─DoubleConv: 2-20                  [1, 32, 112, 112]         --
-│    │    └─Sequential: 3-31             [1, 64, 112, 112]         73,920
-│    │    └─Sequential: 3-32             --                        (recursive)
-│    │    └─Sequential: 3-33             [1, 32, 112, 112]         18,528
-├─Dropout2d: 1-15                        [1, 32, 112, 112]         --
-├─Up: 1-16                               [1, 32, 224, 224]         --
-│    └─Upsample: 2-21                    [1, 32, 224, 224]         --
-│    └─DoubleConv: 2-22                  [1, 32, 224, 224]         --
-│    │    └─Sequential: 3-34             [1, 32, 224, 224]         18,528
-│    │    └─Sequential: 3-35             --                        (recursive)
-│    │    └─Sequential: 3-36             [1, 32, 224, 224]         9,312
-├─Dropout2d: 1-17                        [1, 32, 224, 224]         --
-├─OutConv: 1-18                          [1, 4, 224, 224]          --
-│    └─Conv2d: 2-23                      [1, 4, 224, 224]          132
-==========================================================================================
-Total params: 7,862,724
-Trainable params: 7,862,724
+=================================================================
+Layer (type:depth-idx)                   Param #
+=================================================================
+UNet                                     --
+├─DoubleConv: 1-1                        --
+│    └─Conv2d: 2-1                       896
+│    └─ReLU: 2-2                         --
+│    └─BatchNorm2d: 2-3                  64
+│    └─Sequential: 2-4                   960
+│    │    └─Conv2d: 3-1                  (recursive)
+│    │    └─BatchNorm2d: 3-2             (recursive)
+│    │    └─ReLU: 3-3                    --
+│    └─Conv2d: 2-5                       9,248
+│    └─BatchNorm2d: 2-6                  64
+│    └─Sequential: 2-7                   9,312
+│    │    └─Conv2d: 3-4                  (recursive)
+│    │    └─BatchNorm2d: 3-5             (recursive)
+│    │    └─ReLU: 3-6                    --
+├─Down: 1-2                              --
+│    └─MaxPool2d: 2-8                    --
+│    └─DoubleConv: 2-9                   --
+│    │    └─Conv2d: 3-7                  18,496
+│    │    └─ReLU: 3-8                    --
+│    │    └─BatchNorm2d: 3-9             128
+│    │    └─Sequential: 3-10             18,624
+│    │    └─Conv2d: 3-11                 36,928
+│    │    └─BatchNorm2d: 3-12            128
+│    │    └─Sequential: 3-13             37,056
+├─Down: 1-3                              --
+│    └─MaxPool2d: 2-10                   --
+│    └─DoubleConv: 2-11                  --
+│    │    └─Conv2d: 3-14                 73,856
+│    │    └─ReLU: 3-15                   --
+│    │    └─BatchNorm2d: 3-16            256
+│    │    └─Sequential: 3-17             74,112
+│    │    └─Conv2d: 3-18                 147,584
+│    │    └─BatchNorm2d: 3-19            256
+│    │    └─Sequential: 3-20             147,840
+├─Down: 1-4                              --
+│    └─MaxPool2d: 2-12                   --
+│    └─DoubleConv: 2-13                  --
+│    │    └─Conv2d: 3-21                 295,168
+│    │    └─ReLU: 3-22                   --
+│    │    └─BatchNorm2d: 3-23            512
+│    │    └─Sequential: 3-24             295,680
+│    │    └─Conv2d: 3-25                 590,080
+│    │    └─BatchNorm2d: 3-26            512
+│    │    └─Sequential: 3-27             590,592
+├─MaxPool2d: 1-5                         --
+├─Dropout2d: 1-6                         --
+├─DoubleConv: 1-7                        --
+│    └─Conv2d: 2-14                      1,180,160
+│    └─ReLU: 2-15                        --
+│    └─BatchNorm2d: 2-16                 1,024
+│    └─Sequential: 2-17                  1,181,184
+│    │    └─Conv2d: 3-28                 (recursive)
+│    │    └─BatchNorm2d: 3-29            (recursive)
+│    │    └─ReLU: 3-30                   --
+│    └─Conv2d: 2-18                      1,179,904
+│    └─BatchNorm2d: 2-19                 512
+│    └─Sequential: 2-20                  1,180,416
+│    │    └─Conv2d: 3-31                 (recursive)
+│    │    └─BatchNorm2d: 3-32            (recursive)
+│    │    └─ReLU: 3-33                   --
+├─Up: 1-8                                --
+│    └─Upsample: 2-21                    --
+│    └─DoubleConv: 2-22                  --
+│    │    └─Conv2d: 3-34                 589,952
+│    │    └─ReLU: 3-35                   --
+│    │    └─BatchNorm2d: 3-36            256
+│    │    └─Sequential: 3-37             590,208
+│    │    └─Conv2d: 3-38                 147,584
+│    │    └─BatchNorm2d: 3-39            256
+│    │    └─Sequential: 3-40             147,840
+├─Up: 1-9                                --
+│    └─Upsample: 2-23                    --
+│    └─DoubleConv: 2-24                  --
+│    │    └─Conv2d: 3-41                 147,520
+│    │    └─ReLU: 3-42                   --
+│    │    └─BatchNorm2d: 3-43            128
+│    │    └─Sequential: 3-44             147,648
+│    │    └─Conv2d: 3-45                 36,928
+│    │    └─BatchNorm2d: 3-46            128
+│    │    └─Sequential: 3-47             37,056
+├─Up: 1-10                               --
+│    └─Upsample: 2-25                    --
+│    └─DoubleConv: 2-26                  --
+│    │    └─Conv2d: 3-48                 36,896
+│    │    └─ReLU: 3-49                   --
+│    │    └─BatchNorm2d: 3-50            64
+│    │    └─Sequential: 3-51             36,960
+│    │    └─Conv2d: 3-52                 9,248
+│    │    └─BatchNorm2d: 3-53            64
+│    │    └─Sequential: 3-54             9,312
+├─Up: 1-11                               --
+│    └─Upsample: 2-27                    --
+│    └─DoubleConv: 2-28                  --
+│    │    └─Conv2d: 3-55                 9,232
+│    │    └─ReLU: 3-56                   --
+│    │    └─BatchNorm2d: 3-57            32
+│    │    └─Sequential: 3-58             9,264
+│    │    └─Conv2d: 3-59                 4,640
+│    │    └─BatchNorm2d: 3-60            64
+│    │    └─Sequential: 3-61             4,704
+├─OutConv: 1-12                          --
+│    └─Conv2d: 2-29                      132
+=================================================================
+Total params: 9,037,668
+Trainable params: 9,037,668
 Non-trainable params: 0
-Total mult-adds (Units.GIGABYTES): 8.39
-==========================================================================================
-Input size (MB): 0.60
-Forward/backward pass size (MB): 187.86
-Params size (MB): 31.45
-Estimated Total Size (MB): 219.91
-==========================================================================================
+=================================================================
 
 """
 ResD_unet:base_channels=32; tripleconv
