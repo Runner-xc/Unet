@@ -123,8 +123,8 @@ def main(args):
                 os.makedirs(save_path)
                 
             for data in test_loader:
-                images, masks = data[0].to(device), data[1].to(device)
-                img_name = data[2]
+                images, masks = data[0][0].to(device), data[0][1].to(device)
+                img_name = data[1][0]
                 logits = model(images)  # [1, 4, 320, 320]
                 masks = masks.to(torch.int64)
                 masks = masks.squeeze(1)
@@ -187,12 +187,12 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
+    parser.add_argument('--data_path', type=str, default='/root/Unet/Datasets/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
     parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3, msaf_unet')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-18_18:07:44/model_best_ep:85.pth')
-    parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
+                        default='/root/Unet/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-21_09:56:36/model_best_ep:33.pth')
+    parser.add_argument('--save_path', type=str, default='/root/Unet/results/predict')
     parser.add_argument('--single', type=bool, default=False, help='test single img or not')
     
     args = parser.parse_args()

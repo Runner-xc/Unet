@@ -109,7 +109,7 @@ def main(args):
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"/root/projects/WS-U2net/U-2-Net/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_modification_path = f"/root/Unet/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
             
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
     
@@ -270,7 +270,7 @@ def main(args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"/root/projects/WS-U2net/U-2-Net/results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_logs_path = f"/root/Unet/results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
@@ -330,12 +330,12 @@ def main(args):
                                                                                                     num_small_data=args.small_data, 
                                                                                                     # train_ratio=0.8, 
                                                                                                     # val_ratio=0.1, 
-                            save_path='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV',
+                            save_path='/root/Unet/Datasets/CSV',
                             flag=args.split_flag) 
     
     else:
         train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
-                            save_path='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV',   # 保存划分好的数据集路径
+                            save_path='/root/Unet/Datasets/CSV',   # 保存划分好的数据集路径
                             flag=args.split_flag)
 
     # 读取数据集
@@ -598,15 +598,15 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
-                        default="/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_chged_256_a50_c80.csv", 
+                        default="/root/Unet/Datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
                         help="path to csv dataset")
     
     parser.add_argument('--save_scores_path',   type=str, 
-                        default='/root/projects/WS-U2net/U-2-Net/results/save_scores', 
+                        default='/root/Unet/results/save_scores', 
                         help="root path to save scores on training and valing")
     
     parser.add_argument('--save_weight_path',   type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/save_weights",
+                        default="/root/Unet/results/save_weights",
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 

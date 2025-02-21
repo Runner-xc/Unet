@@ -69,7 +69,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
     
     for data in train_dataloader: 
         # 获取训练数据集的一个batch
-        images, masks = data[0], data[1]
+        images, masks = data[0][0], data[0][1]
         images, masks = images.to(device), masks.to(device)
         # 梯度清零
         optimizer.zero_grad()
@@ -163,7 +163,7 @@ def evaluate(model, device, data_loader, loss_fn, Metric, test:bool=False):
     with torch.no_grad():
         val_dataloader = tqdm(data_loader, desc=f"  Validating  😀", leave=False)
         for data in val_dataloader:
-            images, masks =data[0].to(device), data[1].to(device)
+            images, masks =data[0][0].to(device), data[0][1].to(device)
             with autocast(device_type="cuda"):
                 pred_mask = model(images)         # 验证  模型 softmax 输出
                 masks = masks.to(torch.int64)

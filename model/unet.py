@@ -105,11 +105,10 @@ class MSAF_UNet(nn.Module):
         self.msaf4 = EMAF(base_channels*8)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        self.dropout = nn.Dropout2d(p=p)
-        # 分层dropout设置
-        self.encoder_dropout = nn.Dropout2d(p=0.3)  # 编码器更高dropout
-        self.decoder_dropout = nn.Dropout2d(p=0.2)  # 解码器较低dropout
-        self.attention_dropout = nn.Dropout2d(p=0.1) # 注意力模块后dropout
+        # dropout
+        self.encoder_dropout = nn.Dropout2d(p=p)                            # 编码器更高dropout
+        self.decoder_dropout = nn.Dropout2d(p=p-0.1 if p-0.1>0 else 0.0)    # 解码器较低dropout
+        self.attention_dropout = nn.Dropout2d(p=p-0.2 if p-0.2>0 else 0.0)  # 注意力模块后dropout
 
         # self.dense_aspp = DenseASPPBlock(base_channels*8, base_channels*4, base_channels*8)
         self.center_conv = DoubleConv(base_channels*8, base_channels*8, mid_channels=base_channels*16)
