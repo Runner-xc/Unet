@@ -55,14 +55,11 @@ def main(args):
         model = u2net_full_config()
     elif args.model_name == 'u2net_lite':
         model = u2net_lite_config()
-    elif args.model_name == 'Res_unet':
-        model = Res_UNet(
+    elif args.model_name == 'ResD_unet':
+        model = ResD_UNet(
                     in_channels=3,
                     n_classes=4,
                     p=0)
-    elif args.model_name == 'SE_unet':
-        model = SE_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0, flag=True)
-
     elif args.model_name == 'Segnet':
         model = SegNet(n_classes=4, dropout_p=0)
     
@@ -71,7 +68,13 @@ def main(args):
 
     elif args.model_name == "deeplabv3":
         model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
-    
+
+    elif args.model == "ResD_unet":
+        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
+    elif args.model == "a_unet":
+        model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
+    elif args.model == "m_unet":
+        model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
     elif args.model_name == "msaf_unet":
         model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
 
@@ -123,8 +126,8 @@ def main(args):
                 os.makedirs(save_path)
                 
             for data in test_loader:
-                images, masks = data[0].to(device), data[1].to(device)
-                img_name = data[2]
+                images, masks = data[0][0].to(device), data[0][1].to(device)
+                img_name = data[1][0]
                 logits = model(images)  # [1, 4, 320, 320]
                 masks = masks.to(torch.int64)
                 masks = masks.squeeze(1)
@@ -189,9 +192,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3, msaf_unet')
+    parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, msaf_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-18_18:07:44/model_best_ep:85.pth')
+                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-20_12:17:20/model_best_ep:33.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
     parser.add_argument('--single', type=bool, default=False, help='test single img or not')
     

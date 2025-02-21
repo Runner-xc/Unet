@@ -120,52 +120,34 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "Res_unet", "SE_unet", "RDHAM_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet", "msaf_unet"], \
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "ResD_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet", "msaf_unet", "a_unet", "m_unet"], \
         f"wrong model: {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
     elif args.model =="u2net_lite":
         model = u2net_lite_config()
-        
-    elif args.model == "Res_unet":
-        model = Res_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
-    
-    elif args.model == "RDHAM_unet":
-        model = RDHAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
-    
-    # SE_UNet    
-    elif args.model == "SE_unet":
-        model = SE_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p, flag=True)
-        
-    elif args.model == "unet":
-        if args.small_data:
-            
-            # 重新设定dropout rate
-            setattr(args, 'dropout_p', 0.45)
-            model = UNet(
-                         in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
-        else:
-            model = UNet(
-                         in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    # unet系列
+    elif args.model == "unet":   
+        model = UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "ResD_unet":
+        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "a_unet":
+        model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "m_unet":
+        model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)    
     elif args.model == "msaf_unet":
         model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
-            
+    # 其他模型        
     elif args.model == "Segnet":
         model = SegNet(n_classes=4, dropout_p=args.dropout_p)
-    
     elif args.model == "pspnet":
         model = PSPNet(num_classes=4, use_aux=True, dropout_p=args.dropout_p)
-
-    # deeplabv3系列
     elif args.model == "deeplabv3_resnet50":
         model = deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4)
-
     elif args.model == "deeplabv3_resnet101":
         model = deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4)
-
     elif args.model == "deeplabv3_mobilenetv3_large":
         model = deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
-
     else:
         raise ValueError(f"Invalid model name: {args.model}")
     
@@ -610,9 +592,9 @@ if __name__ == '__main__':
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="msaf_unet", 
-                        help="u2net_full, u2net_lite, unet, Res_unet, SE_unet, RDHAM_unet , msaf_unet\
-                              Segnet, deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large, pspnet")
+                        default="ResD_unet", 
+                        help=" unet, ResD_unet, msaf_unet, a_unet, m_unet\
+                               Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--loss_fn',            type=str, 
                         default='DiceLoss', 
@@ -630,7 +612,7 @@ if __name__ == '__main__':
     parser.add_argument('--elnloss',        type=bool,  default=False,  help='use elnloss or not')
     parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
     parser.add_argument('--l2_lambda',      type=float, default=0.001,  help='L2 factor')
-    parser.add_argument('--dropout_p',      type=float, default=0.5,    help='dropout rate')
+    parser.add_argument('--dropout_p',      type=float, default=0.3,    help='dropout rate')
      
     parser.add_argument('--device',         type=str,   default='cuda:0'     )
     parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
@@ -645,7 +627,7 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=16      ) 
+    parser.add_argument('--batch_size',     type=int,   default=8      ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 
