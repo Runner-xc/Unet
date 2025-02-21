@@ -72,6 +72,12 @@ def main(args):
     elif args.model_name == "deeplabv3":
         model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
     
+    elif args.model == "ResD_unet":
+        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
+    elif args.model == "a_unet":
+        model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
+    elif args.model == "m_unet":
+        model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
     elif args.model_name == "msaf_unet":
         model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
 

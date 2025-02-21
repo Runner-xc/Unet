@@ -81,23 +81,22 @@ class Dalit_Conv(nn.Module):
         super(Dalit_Conv, self).__init__()
         if mid_channels is None:
             mid_channels = out_channels
-        self.conv1 = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1)
-        self.relu = nn.ReLU(inplace=True)
-        self.bn1 = nn.BatchNorm2d(mid_channels)
-        self.cbr1 = nn.Sequential(self.conv1, self.bn1, self.relu)
+        self.cbr1 = nn.Sequential(nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1), 
+                                  nn.BatchNorm2d(mid_channels), 
+                                  nn.ReLU(inplace=True))
         
-        self.dconv2 = nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=2, dilation=2)
-        self.bn2 = nn.BatchNorm2d(mid_channels)
-        self.cbr2 = nn.Sequential(self.dconv2, self.bn2, self.relu)
+        self.cbr2 = nn.Sequential(nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=2, dilation=2), 
+                                  nn.BatchNorm2d(mid_channels), 
+                                  nn.ReLU(inplace=True))
         
-        self.conv3 = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=3, dilation=3)
-        self.bn3 = nn.BatchNorm2d(out_channels)
-        self.c3 = nn.Sequential(self.conv3, self.bn3, self.relu)
+        self.cbr3 = nn.Sequential(nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=3, dilation=3), 
+                                  nn.BatchNorm2d(out_channels),
+                                  nn.ReLU(inplace=True))
         
     def forward(self, x):
         x = self.cbr1(x)
         x = self.cbr2(x)
-        x = self.c3(x)
+        x = self.cbr3(x)
         return x
     
 class DWDalit_Conv(nn.Module):
@@ -150,6 +149,36 @@ class ResConv(nn.Module):
         x = self.relu(x)
         return x
 
+class ResDConv(nn.Module):
+    def __init__(self, in_channels, out_channels, mid_channels=None):
+        super(ResDConv, self).__init__()
+        if mid_channels is None:
+            mid_channels = out_channels
+        self.c1 = nn.Sequential(nn.Conv2d(in_channels, out_channels, kernel_size=1),
+                                nn.BatchNorm2d(out_channels))
+        self.relu = nn.ReLU(inplace=True)
+
+        self.cbr1 = nn.Sequential(nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1), 
+                                  nn.BatchNorm2d(mid_channels), 
+                                  nn.ReLU(inplace=True))
+        
+        self.cbr2 = nn.Sequential(nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=2, dilation=2), 
+                                  nn.BatchNorm2d(mid_channels), 
+                                  nn.ReLU(inplace=True))
+        
+        self.cbr3 = nn.Sequential(nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=3, dilation=3), 
+                                  nn.BatchNorm2d(out_channels))
+        
+    def forward(self, x):
+        residual = x
+        re = self.c1(residual)
+        x = self.cbr1(x)
+        x = self.cbr2(x)
+        x = self.cbr3(x)
+        x = torch.add(x, re)
+        x = self.relu(x)
+        return x
+    
 class DWResConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DWResConv, self).__init__()
