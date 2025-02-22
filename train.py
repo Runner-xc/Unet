@@ -109,7 +109,7 @@ def main(args):
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"/root/Unet/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_modification_path = f"/root/Unet/results/modification_log/{args.model}/L-{args.loss_fn}--S-{args.scheduler}"
             
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
     
@@ -252,16 +252,16 @@ def main(args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"/root/Unet/results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_logs_path = f"/root/Unet/results/logs/{args.model}/L-{args.loss_fn}--S-{args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
     if args.save_flag:
         if args.elnloss:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}'
+            log_path = f'{save_logs_path}/optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
         else:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}'
+            log_path = f'{save_logs_path}/optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
     """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
     
@@ -279,9 +279,9 @@ def main(args):
             
     # 记录修改后的参数
     if args.elnloss:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
+        modification_log_name = f"optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}.md"
     else:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
+        modification_log_name = f"optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}.md"
     params = vars(args)
     params_dict['Parameter'] = printed_params
     params_dict['Value'] = [str(params[p]) for p in printed_params]
@@ -452,11 +452,11 @@ def main(args):
                 writing_logs(writer, train_metrics, val_metrics, epoch)               
                 """-------------------------TXT--------------------------------------------------------"""        
                 writer.add_text('val/Metrics', 
-                                f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
-                                f"model: {args.model}, loss_fn: {args.loss_fn}, scheduler: {args.scheduler}"
+                                f"optim-{args.optimizer}, lr-{args.lr}, wd-{args.wd}, l1_lambda-{args.l1_lambda}, l2_lambda-{args.l2_lambda}"+ '\n'
+                                f"model-{args.model}, loss_fn-{args.loss_fn}, scheduler-{args.scheduler}"
                                 )
                 if epoch == 5:
-                    run_tensorboard(log_path)               
+                    run_tensorboard(log_path, PORT=50091)               
             
             # 保存指标
             if best_mean_loss >= val_mean_loss:
@@ -497,12 +497,12 @@ def main(args):
             print(write_info)
 
             # 保存结果
-            save_scores_path = f'{args.save_scores_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}'
+            save_scores_path = f'{args.save_scores_path}/{args.model}/L-{args.loss_fn}--S-{args.scheduler}'
             
             if args.elnloss:
-                results_file = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.txt"
+                results_file = f"optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}.txt"
             else:
-                results_file = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.txt"
+                results_file = f"optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}.txt"
             file_path = os.path.join(save_scores_path, results_file)
 
             if not os.path.exists(os.path.dirname(file_path)):
@@ -515,9 +515,9 @@ def main(args):
             
             # 保存best模型
             if args.elnloss:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L-{args.loss_fn}--S-{args.scheduler}/optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
             else:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}"
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L-{args.loss_fn}--S-{args.scheduler}/optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}"
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
@@ -592,7 +592,7 @@ if __name__ == '__main__':
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="msaf_unet", 
+                        default="a_unet", 
                         help=" unet, ResD_unet, msaf_unet, a_unet, m_unet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
@@ -612,7 +612,7 @@ if __name__ == '__main__':
     parser.add_argument('--elnloss',        type=bool,  default=False,  help='use elnloss or not')
     parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
     parser.add_argument('--l2_lambda',      type=float, default=0.001,  help='L2 factor')
-    parser.add_argument('--dropout_p',      type=float, default=0.3,    help='dropout rate')
+    parser.add_argument('--dropout_p',      type=float, default=0.4,    help='dropout rate')
      
     parser.add_argument('--device',         type=str,   default='cuda:0'     )
     parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
@@ -627,7 +627,7 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=16      ) 
+    parser.add_argument('--batch_size',     type=int,   default=32      ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 

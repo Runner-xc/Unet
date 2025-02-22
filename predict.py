@@ -55,13 +55,6 @@ def main(args):
         model = u2net_full_config()
     elif args.model_name == 'u2net_lite':
         model = u2net_lite_config()
-    elif args.model_name == 'Res_unet':
-        model = Res_UNet(
-                    in_channels=3,
-                    n_classes=4,
-                    p=0)
-    elif args.model_name == 'SE_unet':
-        model = SE_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0, flag=True)
 
     elif args.model_name == 'Segnet':
         model = SegNet(n_classes=4, dropout_p=0)
@@ -72,11 +65,11 @@ def main(args):
     elif args.model_name == "deeplabv3":
         model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
     
-    elif args.model == "ResD_unet":
+    elif args.model_name == "ResD_unet":
         model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "a_unet":
+    elif args.model_name == "a_unet":
         model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "m_unet":
+    elif args.model_name == "m_unet":
         model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
     elif args.model_name == "msaf_unet":
         model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
@@ -195,9 +188,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/root/Unet/Datasets/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, u2net_full,  u2net_lite,  Res_unet,  SE_unet, Segnet, pspnet, deeplabv3, msaf_unet')
+    parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, m_unet, a_unet, ResD_unet, msaf_unet, u2net_full, u2net_lite, Segnet, pspnet, deeplabv3,')
     parser.add_argument('--weights_path', type=str, 
-                        default='/root/Unet/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-21_09:56:36/model_best_ep:33.pth')
+                        default='/root/Unet/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-21_17:47:19/model_best_ep:38.pth')
     parser.add_argument('--save_path', type=str, default='/root/Unet/results/predict')
     parser.add_argument('--single', type=bool, default=False, help='test single img or not')
     

@@ -37,7 +37,7 @@ class SemanticSegmentationTarget:
         return (model_output[self.category, :, : ] * self.mask).sum()
 
 # 加载图像
-img_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg"
+img_path = "/root/Unet/Image1 - 003.jpeg"
 img = Image.open(img_path).resize((224,224)).convert('RGB')
 
 # 预处理图像
@@ -49,7 +49,7 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-13_17:07:31(resd+N+短连接使用M)/model_best_ep:61.pth'
+weights_path = '/root/Unet/results/save_weights/a_unet/L-DiceLoss--S-CosineAnnealingLR/optim-AdamW-lr-0.0008-wd-1e-06/2025-02-22_09:41:44/model_best_ep:25.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
@@ -142,9 +142,9 @@ with GradCAM(model=model,
                         targets=IP_targets)[0, :]
     IP_cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
-name = "调整后+resd+N+短连接使用M"    
+name = "resd+全A+M"    
 # 保存图片
-save_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img"
+save_path = "/root/Unet/cam_img"
 OM_cam_img = Image.fromarray(OM_cam_image)
 OM_cam_img.save(os.path.join(save_path, f"{name}_OM.jpg"))
 
