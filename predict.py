@@ -69,11 +69,11 @@ def main(args):
     elif args.model_name == "deeplabv3":
         model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
 
-    elif args.model == "ResD_unet":
+    elif args.model_name == "ResD_unet":
         model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "a_unet":
+    elif args.model_name == "a_unet":
         model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "m_unet":
+    elif args.model_name == "m_unet":
         model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
     elif args.model_name == "msaf_unet":
         model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
@@ -192,9 +192,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='msaf_unet', help=' unet, msaf_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--model_name', type=str, default='deeplabv3', help=' unet, a_unet, m_unet, msaf_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-20_12:17:20/model_best_ep:33.pth')
+                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/deeplabv3_resnet50/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-18_15:55:59/model_best.pth')
     parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
     parser.add_argument('--single', type=bool, default=False, help='test single img or not')
     

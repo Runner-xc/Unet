@@ -49,7 +49,7 @@ input_tensor = preprocess_image(rgb_img,
                                 std=[0.229, 0.224, 0.225])
 
 # 加载模型权重
-weights_path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-13_17:07:31(resd+N+短连接使用M)/model_best_ep:61.pth'
+weights_path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/a_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-22_18:36:07/model_best_ep:102.pth'
 checkpoint = torch.load(weights_path)
 state_dict = checkpoint['model']
 
@@ -62,10 +62,10 @@ model_name = {'segnet': SegNet, 'pspnet': PSPNet, 'deeplabv3' : deeplabv3_resnet
 # model = PSPNet(num_classes=4, dropout_p=0, use_aux=False)
 
 # model = deeplabv3_resnet50(aux=False, num_classes=4)
-model = MSAF_UNet(in_channels=3, n_classes=4, p=0)
+model = A_UNet(in_channels=3, n_classes=4, p=0)
 
 # 加载模型权重
-model.load_state_dict(state_dict, strict=False)
+model.load_state_dict(state_dict)
 
 # 确保在推理模式下运行模型
 model.eval()
@@ -142,7 +142,7 @@ with GradCAM(model=model,
                         targets=IP_targets)[0, :]
     IP_cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
-name = "调整后+resd+N+短连接使用M"    
+name = "ResD+A+bottleneck_dropout"    
 # 保存图片
 save_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/cam_img"
 OM_cam_img = Image.fromarray(OM_cam_image)

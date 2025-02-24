@@ -592,7 +592,7 @@ if __name__ == '__main__':
                         help="the path of save weights")
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="ResD_unet", 
+                        default="a_unet", 
                         help=" unet, ResD_unet, msaf_unet, a_unet, m_unet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
@@ -612,7 +612,7 @@ if __name__ == '__main__':
     parser.add_argument('--elnloss',        type=bool,  default=False,  help='use elnloss or not')
     parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
     parser.add_argument('--l2_lambda',      type=float, default=0.001,  help='L2 factor')
-    parser.add_argument('--dropout_p',      type=float, default=0.3,    help='dropout rate')
+    parser.add_argument('--dropout_p',      type=float, default=0.4,    help='dropout rate')
      
     parser.add_argument('--device',         type=str,   default='cuda:0'     )
     parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
