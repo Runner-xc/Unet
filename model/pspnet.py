@@ -1,154 +1,116 @@
-import torch.nn as nn
 import torch
+from torch import nn
 import torch.nn.functional as F
-from .modules import *
-from torchinfo import summary
-from .resnet_backbone import *
 
-class ConvBNReluLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, groups=1, dilation=1, padding=None, name=None):
-        """
-        in_channels: 输入数据的通道数
-        out_channels: 输出数据的通道数
-        kernel_size: 卷积核大小
-        stride: 卷积步长
-        groups: 二维卷积层的组数
-        dilation: 空洞大小
-        padding: 填充大小
-        """
-        super(ConvBNReluLayer, self).__init__()
-        if padding is None:
-            padding = (kernel_size-1)//2
-        
-        self.conv = nn.Conv2d(in_channels=in_channels,
-                                    out_channels=out_channels, 
-                                    kernel_size=kernel_size, 
-                                    stride=stride, 
-                                    padding=padding,
-                                    groups=groups,
-                                    dilation=dilation,
-                                    )
-        self.bn = nn.BatchNorm2d(num_features=out_channels)
-        self.relu = nn.ReLU()
+import model.resnet as models
 
-    def forward(self, inputs):
-        x = self.conv(inputs)
-        x = +self.bn(x)
-        x = self.relu(x)
-        return x
 
-class BottleneckBlock(nn.Module):
-    expansion = 4  # 最后的输出的通道数会变成4倍
-    def __init__(self, in_channels, out_channels, stride=1, shortcut=True, dilation=1, padding=None, name=None):
-        """
-        shortcut: 最开始的输入和输出是否能进行直接相加的操作, 能=True, 不能=False（会进行1x1卷积操作进行维度匹配）。
-        """
-        super(BottleneckBlock, self).__init__()
-        # 3次 (卷积、批归一化、ReLU) 操作
-        self.conv0 = ConvBNReluLayer(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
-        self.conv1 = ConvBNReluLayer(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=padding, dilation=dilation)
-        self.conv2 = ConvBNReluLayer(in_channels=out_channels, out_channels=out_channels*4, kernel_size=1, stride=1)
-        
-        if not shortcut:
-            # 不能直接相加时, 进行维度匹配
-            self.short = ConvBNReluLayer(in_channels=in_channels, out_channels=out_channels*4, kernel_size=1, stride=stride)
-        
-        self.shortcut = shortcut
-        self.num_channel_out = out_channels * 4  # 最后的输出通道数变成4倍
-    
-    def forward(self, inputs):
-        conv0 = self.conv0(inputs)
-        conv1 = self.conv1(conv0)
-        conv2 = self.conv2(conv1)
-        if self.shortcut:
-            short = inputs
-        else:
-            short = self.short(inputs)
-        y = torch.add(short, conv2)  # 元素相加
-        y = torch.nn.functional.relu(y)  # ReLU激活
-        return y
-    
-def resnet50(**kwargs):
-    res50 = ResNet(Bottleneck, [3, 4, 6, 3],**kwargs) 
-    return res50
-    
+class PPM(nn.Module):
+    def __init__(self, in_dim, reduction_dim, bins):
+        super(PPM, self).__init__()
+        self.features = []
+        for bin in bins:
+            self.features.append(nn.Sequential(
+                nn.AdaptiveAvgPool2d(bin),
+                nn.Conv2d(in_dim, reduction_dim, kernel_size=1, bias=False),
+                nn.BatchNorm2d(reduction_dim),
+                nn.ReLU(inplace=True)
+            ))
+        self.features = nn.ModuleList(self.features)
+
+    def forward(self, x):
+        x_size = x.size()
+        out = [x]
+        for f in self.features:
+            out.append(F.interpolate(f(x), x_size[2:], mode='bilinear', align_corners=True))
+        return torch.cat(out, 1)
+
+
 class PSPNet(nn.Module):
-    def __init__(self, num_classes, dropout_p, use_aux=True):
+    def __init__(self, layers=50, bins=(1, 2, 3, 6), dropout=0.1, classes=2, zoom_factor=8, use_ppm=True, criterion=nn.CrossEntropyLoss(ignore_index=255), pretrained=True):
         super(PSPNet, self).__init__()
-        res = resnet50()  # 生成backbone
-        self.use_aux = use_aux  # 是否用辅助分类器，True则用
-        self.dropout = nn.Dropout2d(p=dropout_p)
-        self.conv = res.conv1
-        self.bn = res.bn1
-        self.relu = res.relu
-        self.pool2d_max = res.maxpool
-        
-        self.layer1 = res.layer1
-        self.layer2 = res.layer2
-        self.layer3 = res.layer3
-        self.conv2 = nn.Conv2d(1024, 128, kernel_size=1)
-        self.layer4 = res.layer4
-        self.conv3 = nn.Conv2d(2048, 256, kernel_size=1)
-        num_channels = 256
-        self.pspmodule = PSPModule(num_channels, [1, 2, 3, 6])
-        
-        # cls：2048*2->512->num_classes，经过PSPModule，通道数会翻倍
-        self.classifier = nn.Sequential(
-            nn.Conv2d(num_channels*2, num_channels // 4, kernel_size=3, padding=1),
-            nn.BatchNorm2d(num_channels // 4),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Conv2d(num_channels // 4, num_classes, kernel_size=1)
+        assert layers in [50, 101, 152]
+        assert 2048 % len(bins) == 0
+        assert classes > 1
+        assert zoom_factor in [1, 2, 4, 8]
+        self.zoom_factor = zoom_factor
+        self.use_ppm = use_ppm
+        self.criterion = criterion
+
+        if layers == 50:
+            resnet = models.resnet50(pretrained=pretrained)
+        elif layers == 101:
+            resnet = models.resnet101(pretrained=pretrained)
+        else:
+            resnet = models.resnet152(pretrained=pretrained)
+        self.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.conv2, resnet.bn2, resnet.relu, resnet.conv3, resnet.bn3, resnet.relu, resnet.maxpool)
+        self.layer1, self.layer2, self.layer3, self.layer4 = resnet.layer1, resnet.layer2, resnet.layer3, resnet.layer4
+
+        for n, m in self.layer3.named_modules():
+            if 'conv2' in n:
+                m.dilation, m.padding, m.stride = (2, 2), (2, 2), (1, 1)
+            elif 'downsample.0' in n:
+                m.stride = (1, 1)
+        for n, m in self.layer4.named_modules():
+            if 'conv2' in n:
+                m.dilation, m.padding, m.stride = (4, 4), (4, 4), (1, 1)
+            elif 'downsample.0' in n:
+                m.stride = (1, 1)
+
+        fea_dim = 2048
+        if use_ppm:
+            self.ppm = PPM(fea_dim, int(fea_dim/len(bins)), bins)
+            fea_dim *= 2
+        self.cls = nn.Sequential(
+            nn.Conv2d(fea_dim, 512, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(p=dropout),
+            nn.Conv2d(512, classes, kernel_size=1)
         )
-        
-        # aux
-        self.aux = nn.Sequential(
-            nn.Conv2d(num_channels // 2, num_channels // 4, kernel_size=3, padding=1),
-            nn.BatchNorm2d(num_channels // 4),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Conv2d(num_channels // 4, num_classes, kernel_size=1)
-        )
-        
-        
-    def forward(self, inputs):
-        input_size = inputs.shape[2:]  # H, W
-        # inputs: [3, 1, 1]
-        x = self.conv(inputs)  # [64, 1/2, 1/2]
-        x = self.bn(x)
-        x = self.relu(x)
-        x = self.pool2d_max(x)
+        if self.training:
+            self.aux = nn.Sequential(
+                nn.Conv2d(1024, 256, kernel_size=3, padding=1, bias=False),
+                nn.BatchNorm2d(256),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(p=dropout),
+                nn.Conv2d(256, classes, kernel_size=1)
+            )
 
-        x = self.layer1(x)  # [256, 1/4, 1/4]
-        x = self.dropout(x)
+    def forward(self, x, y=None):
+        x_size = x.size()
+        assert (x_size[2]-1) % 8 == 0 and (x_size[3]-1) % 8 == 0
+        h = int((x_size[2] - 1) / 8 * self.zoom_factor + 1)
+        w = int((x_size[3] - 1) / 8 * self.zoom_factor + 1)
 
-        x = self.layer2(x)  # [512, 1/8, 1/8]
-        x = self.dropout(x)
+        x = self.layer0(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x_tmp = self.layer3(x)
+        x = self.layer4(x_tmp)
+        if self.use_ppm:
+            x = self.ppm(x)
+        x = self.cls(x)
+        if self.zoom_factor != 1:
+            x = F.interpolate(x, size=(h, w), mode='bilinear', align_corners=True)
 
-        aux_x = self.layer3(x)  # [1024, 1/16, 1/16]
-        x = self.dropout(aux_x)
-        aux_x = self.conv2(x)
+        if self.training:
+            aux = self.aux(x_tmp)
+            if self.zoom_factor != 1:
+                aux = F.interpolate(aux, size=(h, w), mode='bilinear', align_corners=True)
+            main_loss = self.criterion(x, y)
+            aux_loss = self.criterion(aux, y)
+            return x.max(1)[1], main_loss, aux_loss
+        else:
+            return x
 
-        x = self.layer4(x)  # [2048, 1/32, 1/32]
-        x = self.dropout(x)
-        x = self.conv3(x)
 
-        out = self.pspmodule(x)  # [4096, 1/32, 1/32]
-        out = self.dropout(out)
-
-        out = F.interpolate(out, size=input_size, mode='bilinear', align_corners=True)  # [4096, 1, 1]
-        heatmap = self.classifier(out)  # [num_classes, 1, 1]
-        if self.use_aux:
-            aux = self.aux(aux_x)  # [num_classes, 1, 1]
-            aux = F.interpolate(aux, size=input_size, mode='bilinear', align_corners=True)
-            return heatmap, aux
-        return heatmap
-    
 if __name__ == '__main__':
-    net = PSPNet(num_classes=3, use_aux=True, dropout_p=0.5)
-    x = torch.randn(2, 3, 256, 256)
-    heatmap, aux = net(x)
-    summary(model=net)
-    print(heatmap.shape)
-    print(aux.shape)
-    
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
+    input = torch.rand(4, 3, 473, 473).cuda()
+    model = PSPNet(layers=50, bins=(1, 2, 3, 6), dropout=0.1, classes=21, zoom_factor=1, use_ppm=True, pretrained=True).cuda()
+    model.eval()
+    print(model)
+    output = model(input)
+    print('PSPNet', output.size())
