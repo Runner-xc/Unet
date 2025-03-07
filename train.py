@@ -90,7 +90,7 @@ def main(args):
         'last_epoch'    : '13. last_epoch',
         'save_flag'     : '14. save_flag',
         'batch_size'    : '15. batch_size',
-        'small_data'    : '16. small_data',
+        'num_small_data': '16. num_small_data',
         'eval_interval' : '17. eval_interval',
         'split_flag'    : '18. split_flag',
         'resume'        : '19. resume'
@@ -202,7 +202,6 @@ def main(args):
         scheduler = CosineAnnealingLR(optimizer,
                                       T_max=args.Tmax, 
                                       eta_min=args.eta_min,
-                                      verbose=True,
                                       last_epoch=args.last_epoch)
         
     elif args.scheduler == 'ReduceLROnPlateau':
@@ -219,7 +218,6 @@ def main(args):
         scheduler = CosineAnnealingLR(optimizer,
                                       T_max=args.Tmax, 
                                       eta_min=args.eta_min,
-                                      verbose=True,
                                       last_epoch=args.last_epoch)
         
     # 损失函数
@@ -241,7 +239,7 @@ def main(args):
         loss_fn = AdaptiveSegLoss(num_classes=4)
     
     # 缩放器
-    scaler = torch.cuda.amp.GradScaler() if args.amp else None
+    scaler = torch.amp.GradScaler() if args.amp else None
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
@@ -413,6 +411,8 @@ def main(args):
             
             # 更新调度器
             scheduler.step()
+            current_lr = scheduler.get_last_lr()[0]  # 获取当前学习率
+            
 
             # 评价指标 metrics = [recall, precision, dice, f1_score]
             val_metrics ={}
@@ -434,7 +434,8 @@ def main(args):
                   f"val_OP_loss: {val_OP_loss:.3f}\n"
                   f"val_IOP_loss: {val_IOP_loss:.3f}\n"
                   f"val_mean_loss: {val_mean_loss:.3f}\n"
-                  f"val_cost_time: {val_cost_time:.2f}s\n\n")
+                  f"val_cost_time: {val_cost_time:.2f}s\n")
+            print(f"Current learning rate: {current_lr}")
             
             # 记录日志
             tb = args.tb
@@ -481,7 +482,7 @@ def main(args):
             loss_s = f"val_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s + '\n'
+            write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s
 
             # 打印结果
             print(write_info)
@@ -631,7 +632,7 @@ if __name__ == '__main__':
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 
-    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--lr',             type=float, default=3e-4,   help='learning rate')
     parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')

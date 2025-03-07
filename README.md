@@ -1,13 +1,13 @@
-# Unet u2net
-根据自身需求搭建Unet网络
+# Unet系列
+基于U-Net架构设计岩石分割网络
 
 ## 项目文件结构
 ```
 ├── utils: 工具箱
 ├── SEM_Data.py:      自定义数据集读取相关代码
-├── predict.py:       预测代码   (待实现)
+├── predict.py:       预测代码   
 ├── train.py:         GPU 或 CPU 训练代码
-├── transforms.py:    数据预处理相关代码  （待实现）
+├── transforms.py:    数据预处理相关代码  
 └── requirements.txt: 项目依赖
 ```
 ## 数据集结构
