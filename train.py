@@ -1,32 +1,36 @@
 import torch
 import datetime
 from torch.utils.data import DataLoader, Dataset
-from SEM_Data import SEM_DATA
+from utils.my_data import SEM_DATA
 from utils import data_split
 from utils.writing_logs import writing_logs
 import argparse
 import os
 from torch.optim import Adam, SGD, RMSprop, AdamW
 import time
-from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import *
-from model.deeplabv3_model import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
+from model.deeplabv3 import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
 from model.pspnet import PSPNet
+from model.Segnet import SegNet
+from model.u2net import u2net_full_config, u2net_lite_config
+from model.unet import UNet, ResD_UNet
+from model.aicunet import AICUNet
+from model.a_unet import A_UNet, A_UNetv2
+from model.m_unet import M_UNet
+from model.msaf_unet import MSAF_UNet, MSAF_UNetv2
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
 from utils import param_modification
 from utils import write_experiment_log
-from loss_fn import *
-from torch.amp import GradScaler, autocast
-from metrics import Evaluate_Metric
+from utils.loss_fn import *
+from utils.metrics import Evaluate_Metric
 from torch.utils.tensorboard import SummaryWriter
 import utils.transforms as T
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from typing import Union, List
 from utils.run_tensorboard import run_tensorboard
 from model.Segnet import SegNet
-
+from torchinfo import summary
 
 class SODPresetTrain:
     def __init__(self, base_size: Union[int, List[int]], crop_size: int,
@@ -100,7 +104,7 @@ def main(args):
 
     # 打印参数
     params_header = ['Parameter', 'Value']
-    print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
+    # print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
     
     """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
     initial_time = time.time()
@@ -109,7 +113,7 @@ def main(args):
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"/root/projects/WS-U2net/U-2-Net/results/modification_log/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_modification_path = f"{args.modification_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
             
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
     
@@ -120,7 +124,7 @@ def main(args):
          
     # 加载模型
     
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "ResD_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet", "msaf_unet", "a_unet", "m_unet"], \
+    assert args.model in ["u2net_full", "u2net_lite", "unet", "aicunet", "ResD_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet", "msaf_unet", "msaf_unetv2", "a_unet", "a_unetv2", "m_unet"], \
         f"wrong model: {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
@@ -133,15 +137,21 @@ def main(args):
         model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
     elif args.model == "a_unet":
         model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "a_unetv2":
+        model = A_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
     elif args.model == "m_unet":
         model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)    
     elif args.model == "msaf_unet":
         model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "msaf_unetv2":
+        model = MSAF_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "aicunet":
+        model = AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p)
     # 其他模型        
     elif args.model == "Segnet":
         model = SegNet(n_classes=4, dropout_p=args.dropout_p)
     elif args.model == "pspnet":
-        model = PSPNet(num_classes=4, use_aux=True, dropout_p=args.dropout_p)
+        model = PSPNet(classes=4, dropout=args.dropout_p, pretrained=False)
     elif args.model == "deeplabv3_resnet50":
         model = deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4)
     elif args.model == "deeplabv3_resnet101":
@@ -153,7 +163,8 @@ def main(args):
     
     # 初始化模型
     kaiming_initial(model)
-    model.to(device)  
+    model.to(device)
+    model_info = str(summary(model, (1, 3, 256, 256)))  
 
     # 优化器   TODO: 优化器参数
     
@@ -181,24 +192,6 @@ def main(args):
                           )
     
     # 调度器
-    """
-        "LambdaLR",
-        "MultiplicativeLR",
-        "StepLR",
-        "MultiStepLR",
-        "ConstantLR",
-        "LinearLR",
-        "ExponentialLR",
-        "SequentialLR",
-        "CosineAnnealingLR",
-        "ChainedScheduler",
-        "ReduceLROnPlateau",
-        "CyclicLR",
-        "CosineAnnealingWarmRestarts",
-        "OneCycleLR",
-        "PolynomialLR",
-        "LRScheduler",
-    """
     assert args.scheduler in ['CosineAnnealingLR', 'ReduceLROnPlateau'], \
             f'scheduler must be CosineAnnealingLR 、ReduceLROnPlateau, but got {args.scheduler}'
     if args.scheduler == 'CosineAnnealingLR':
@@ -252,7 +245,7 @@ def main(args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"/root/projects/WS-U2net/U-2-Net/results/logs/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_logs_path = f"{args.log_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
@@ -263,17 +256,6 @@ def main(args):
         else:
             log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
-    """——————————————————————————————————————————————断点 续传———————————————————————————————————————————————"""
-    
-    if args.resume:
-        checkpoint = torch.load(args.resume)
-        epoch = checkpoint['epoch']
-        optimizer = checkpoint['optimizer']
-        Metrics = checkpoint['Metrics']
-        scheduler = checkpoint['scheduler']
-        best_mean_loss = checkpoint['best_mean_loss']
-        args = checkpoint['args']    
-        
     
     """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
             
@@ -307,17 +289,17 @@ def main(args):
     val_ratio = args.val_ratio   
 
     # 划分数据集
-    if args.small_data is not None:
+    if args.num_small_data is not None:
         train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
-                                                                                                    num_small_data=args.small_data, 
+                                                                                                    num_small_data=args.num_small_data, 
                                                                                                     # train_ratio=0.8, 
                                                                                                     # val_ratio=0.1, 
-                            save_path='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV',
+                            save_root_path=args.data_root_path,
                             flag=args.split_flag) 
     
     else:
         train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
-                            save_path='/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV',   # 保存划分好的数据集路径
+                            save_root_path=args.data_root_path,   # 保存划分好的数据集路径
                             flag=args.split_flag)
 
     # 读取数据集
@@ -339,7 +321,9 @@ def main(args):
                                 shuffle=False, 
                                 num_workers=num_workers,
                                 pin_memory=True)
-    
+
+          
+            
     """——————————————————————————————————————————————训练 验证——————————————————————————————————————————————"""
     start_epoch = args.start_epoch
     end_epoch = args.end_epoch
@@ -348,9 +332,16 @@ def main(args):
     best_epoch = 0 
     patience = 0 
     current_mean_loss = float('inf')
-    
+
+    """断点续传"""    
     if args.resume:
+        checkpoint = torch.load(args.resume)
+        model.load_state_dict(checkpoint['model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
+        best_mean_loss = checkpoint['best_mean_loss']
         start_epoch = checkpoint['epoch']
+        best_epoch = checkpoint['best_epoch']
         print(f"Resume from epoch: {start_epoch}")
        
     for epoch in range(start_epoch, end_epoch):
@@ -395,7 +386,6 @@ def main(args):
         train_cost_time = end_time - start_time
 
         # 打印
-
         print(
               f"train_OM_loss: {train_OM_loss:.3f}\n"
               f"train_OP_loss: {train_OP_loss:.3f}\n"
@@ -529,6 +519,7 @@ def main(args):
                     "best_mean_loss": best_mean_loss,
                     "best_epoch": best_epoch,
                     "epoch": epoch,
+                    "model_info": model_info,
                     "args": args}
             # 保存当前最佳模型的权重
             best_model_path = f"{save_weights_path}/model_best_ep:{best_epoch}.pth"
@@ -580,20 +571,29 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
-                        default="/root/projects/WS-U2net/U-2-Net/SEM_DATA/CSV/rock_sem_chged_256_a50_c80.csv", 
+                        default="/root/projects/WS-U2net/U-2-Net/datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
                         help="path to csv dataset")
     
+    parser.add_argument('--data_root_path',  type=str,
+                        default="/root/projects/WS-U2net/U-2-Net/datasets/CSV")
+    
+    # results
     parser.add_argument('--save_scores_path',   type=str, 
-                        default='/root/projects/WS-U2net/U-2-Net/results/save_scores', 
-                        help="root path to save scores on training and valing")
+                        default='/root/projects/WS-U2net/U-2-Net/results/save_scores')
     
     parser.add_argument('--save_weight_path',   type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/save_weights",
-                        help="the path of save weights")
+                        default="/root/projects/WS-U2net/U-2-Net/results/save_weights")
+    
+    parser.add_argument('--log_path',  type=str,
+                        default="/root/projects/WS-U2net/U-2-Net/results/logs")
+    
+    parser.add_argument('--modification_path', type=str,
+                        default="/root/projects/WS-U2net/U-2-Net/results/modification_log")
+    
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="a_unet", 
-                        help=" unet, ResD_unet, msaf_unet, a_unet, m_unet\
+                        default="msaf_unetv2", 
+                        help=" unet, ResD_unet, msaf_unet, msaf_unetv2, a_unet, a_unetv2, m_unet, aicunet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--loss_fn',            type=str, 
@@ -609,12 +609,12 @@ if __name__ == '__main__':
                         help="'CosineAnnealingLR', 'ReduceLROnPlateau'.")
     
     # 正则化
-    parser.add_argument('--elnloss',        type=bool,  default=False,  help='use elnloss or not')
-    parser.add_argument('--l1_lambda',      type=float, default=0.001,  help="L1 factor")
-    parser.add_argument('--l2_lambda',      type=float, default=0.001,  help='L2 factor')
-    parser.add_argument('--dropout_p',      type=float, default=0.4,    help='dropout rate')
+    parser.add_argument('--elnloss',        type=bool,  default=False)
+    parser.add_argument('--l1_lambda',      type=float, default=0.001)
+    parser.add_argument('--l2_lambda',      type=float, default=0.001)
+    parser.add_argument('--dropout_p',      type=float, default=0.4  )
      
-    parser.add_argument('--device',         type=str,   default='cuda:0'     )
+    parser.add_argument('--device',         type=str,   default='cuda:0')
     parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
@@ -625,9 +625,9 @@ if __name__ == '__main__':
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
     # 训练参数
-    parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
-    parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=8      ) 
+    parser.add_argument('--train_ratio',    type=float, default=0.7) 
+    parser.add_argument('--val_ratio',      type=float, default=0.1)
+    parser.add_argument('--batch_size',     type=int,   default=8  ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
 
@@ -635,7 +635,7 @@ if __name__ == '__main__':
     parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
-    parser.add_argument('--small_data',     type=int,   default=None,   help='number of small data')
+    parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
     parser.add_argument('--last_epoch',     type=int,   default=0,      help='start epoch of lr decay for CosineAnnealingLR')

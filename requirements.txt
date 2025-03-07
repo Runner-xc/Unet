@@ -1,0 +1,8 @@
+pandas
+opencv-python
+torch
+torchinfo
+torchvision
+tqdm
+tabulate
+tensorboard, tensorboardX

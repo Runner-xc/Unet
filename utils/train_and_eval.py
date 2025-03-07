@@ -91,24 +91,27 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
             
             # 是否使用辅助分类器
             elif isinstance(pred, tuple):
-                heatmap, aux = pred
+                if len(pred) == 2:
+                    heatmap, aux = pred
+                    # 主分支loss
+                    main_loss_dict = loss_fn(heatmap, masks)
+                    m_mean_loss = main_loss_dict['total_loss']
+                    m_OM_loss, m_OP_loss, m_IOP_loss = main_loss_dict['Organic matter'], main_loss_dict['Organic pores'], main_loss_dict['Inorganic pores']
 
-                # 主分支loss
-                main_loss_dict = loss_fn(heatmap, masks)
-                m_mean_loss = main_loss_dict['total_loss']
-                m_OM_loss, m_OP_loss, m_IOP_loss = main_loss_dict['Organic matter'], main_loss_dict['Organic pores'], main_loss_dict['Inorganic pores']
+                    # 辅助分支loss
+                    aux_loss_dict = loss_fn(aux, masks)
+                    a_mean_loss = aux_loss_dict['total_loss']
+                    a_OM_loss, a_OP_loss, a_IOP_loss = aux_loss_dict['Organic matter'], aux_loss_dict['Organic pores'], aux_loss_dict['Inorganic pores']
+                    
+                    # 计算总损失：主分支损失*0.6 + 辅助分支损失*0.4
+                    train_mean_loss = m_mean_loss*0.6 + a_mean_loss*0.4
+                    OM_loss, OP_loss, IOP_loss = m_OM_loss*0.6 + a_OM_loss*0.4, m_OP_loss*0.6 + a_OP_loss*0.4, m_IOP_loss*0.6 + a_IOP_loss*0.4
 
-                # 辅助分支loss
-                aux_loss_dict = loss_fn(aux, masks)
-                a_mean_loss = aux_loss_dict['total_loss']
-                a_OM_loss, a_OP_loss, a_IOP_loss = aux_loss_dict['Organic matter'], aux_loss_dict['Organic pores'], aux_loss_dict['Inorganic pores']
+                    metrics = Metric.update(heatmap, masks)
+                    Metric_list += metrics
                 
-                # 计算总损失：主分支损失*0.6 + 辅助分支损失*0.4
-                train_mean_loss = m_mean_loss*0.6 + a_mean_loss*0.4
-                OM_loss, OP_loss, IOP_loss = m_OM_loss*0.6 + a_OM_loss*0.4, m_OP_loss*0.6 + a_OP_loss*0.4, m_IOP_loss*0.6 + a_IOP_loss*0.4
 
-                metrics = Metric.update(heatmap, masks)
-                Metric_list += metrics
+                
 
             else:
                 loss_dict = loss_fn(pred, masks)

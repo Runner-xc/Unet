@@ -1,7 +1,0 @@
-pandas
-opencv-python
-torch
-torchvision
-tqdm
-tabulate
-tensorboard

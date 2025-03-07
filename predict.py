@@ -2,20 +2,24 @@ import torch
 from PIL import Image
 import torchvision
 from torch.utils.data import DataLoader, Dataset
-from SEM_Data import SEM_DATA
+from utils.my_data import SEM_DATA
 import argparse
 import time
-from model.deeplabv3_model import deeplabv3_resnet50
+from model.deeplabv3 import deeplabv3_resnet50
 from model.pspnet import PSPNet
 from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import *
+from model.unet import UNet, ResD_UNet
+from model.aicunet import AICUNet
+from model.a_unet import A_UNet, A_UNetv2
+from model.m_unet import M_UNet
+from model.msaf_unet import MSAF_UNet, MSAF_UNetv2
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
-from loss_fn import *
-from metrics import Evaluate_Metric
+from utils.loss_fn import *
+from utils.metrics import Evaluate_Metric
 import utils.transforms as T
 from typing import Union, List
 
@@ -64,7 +68,7 @@ def main(args):
         model = SegNet(n_classes=4, dropout_p=0)
     
     elif args.model_name == "pspnet":
-        model = PSPNet(num_classes=4, dropout_p=0, use_aux=False)
+        model = PSPNet(classes=4, dropout=0)
 
     elif args.model_name == "deeplabv3":
         model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
@@ -73,11 +77,14 @@ def main(args):
         model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
     elif args.model_name == "a_unet":
         model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
+    elif args.model_name == "a_unetv2":
+        model = A_UNetv2(in_channels=3, n_classes=4, p=0)
     elif args.model_name == "m_unet":
         model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
     elif args.model_name == "msaf_unet":
         model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-
+    elif args.model_name == "aicunet":
+        model = AICUNet(in_channels=3, n_classes=4, p=0)
     else:
         raise ValueError(f"model name error")
     
@@ -110,9 +117,10 @@ def main(args):
         pred_mask_np = pred_mask.numpy()
         pred_img_pil = Image.fromarray(pred_mask_np)
         # 保存图片
-        if not os.path.exists("single_predict/"):
-            os.mkdir("single_predict/")
-        pred_img_pil.save(f"single_predict/unet_1.png")        
+        single_path = args.single_path
+        if not os.path.exists(single_path):
+            os.mkdir(single_path)
+        pred_img_pil.save(f"{single_path}/{args.model_name}.png")        
         print("预测完成!")
        
     else:
@@ -132,26 +140,16 @@ def main(args):
                 masks = masks.to(torch.int64)
                 masks = masks.squeeze(1)
                 
-                
                 # 使用 argmax 获取每个像素点预测最大的类别索引
                 pred_mask = torch.softmax(logits, dim=1)
                 metrics = Metric.update(pred_mask, masks)
                 Metric_list += metrics
                 pred_mask = torch.argmax(logits, dim=1)  # [1, 320, 320]
-                
-                # 移除批次维度，如果存在
+
                 pred_mask = pred_mask.squeeze(0)  # [320, 320]
-                
-                # 确保 pred_mask 是 uint8 类型
                 pred_mask = pred_mask.to(torch.uint8)
-                
-                # 将 pred_mask 转移到 CPU 上
                 pred_mask = pred_mask.cpu()
-                
-                # 将 torch.Tensor 转换为 numpy 数组
                 pred_mask_np = pred_mask.numpy()
-                
-                # 将 numpy 数组转换为 PIL 图像
                 pred_img_pil = Image.fromarray(pred_mask_np)
                 
                 # 保存图片
@@ -190,13 +188,16 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
-    parser.add_argument('--base_size', type=int, default=256)
-    parser.add_argument('--model_name', type=str, default='deeplabv3', help=' unet, a_unet, m_unet, msaf_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
-    parser.add_argument('--weights_path', type=str, 
-                        default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/deeplabv3_resnet50/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2024-12-18_15:55:59/model_best.pth')
-    parser.add_argument('--save_path', type=str, default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
-    parser.add_argument('--single', type=bool, default=False, help='test single img or not')
+    parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/SEM_DATA/CSV/test_rock_sem_chged_256_a50_c80.csv')
+    parser.add_argument('--base_size',      type=int,       default=256)
+    parser.add_argument('--model_name',     type=str,       default='a_unetv2',     help=' unet, a_unet, a_unetv2, m_unet, msaf_unet, ResD_unet, aicunet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--weights_path',   type=str,       
+                                            default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/a_unetv2/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-03-06_16:28:12/model_best_ep:36.pth')
+    
+    parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
+    parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/single_predict')
+    parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
+    
     
     args = parser.parse_args()
     main(args)

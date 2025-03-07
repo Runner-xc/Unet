@@ -7,12 +7,12 @@
 import pandas as pd
 import os
 
-def data_split_to_train_val_test(data_path, flag, train_ratio=0.8, val_ratio=0.1, save_path=None):
+def data_split_to_train_val_test(data_path, flag, train_ratio=0.8, val_ratio=0.1, save_root_path="./datasets"):
     """
     data_path:   csv数据集文件路径
     train_ratio: 训练集比例  默认值：0.8
     val_ratio:   验证集比例  默认值：0.1
-    save_path:   保存数据集的目录路径，如果不提供，则不保存文件
+    save_root_path:   保存数据集的目录路径，如果不提供，则不保存文件
     flag:        是否划分数据集
     """
     if flag:
@@ -33,24 +33,24 @@ def data_split_to_train_val_test(data_path, flag, train_ratio=0.8, val_ratio=0.1
         test_data = df.iloc[train_len + val_len:]
 
         # 如果提供了保存路径，则保存数据集
-        if save_path:
-            train_data.to_csv(f"{save_path}/train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
-            val_data.to_csv(f"{save_path}/val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
-            test_data.to_csv(f"{save_path}/test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+        if save_root_path:
+            train_data.to_csv(f"{save_root_path}/train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            val_data.to_csv(f"{save_root_path}/val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            test_data.to_csv(f"{save_root_path}/test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
             print("数据集划分完成！")
 
-    train_data_save_path = f"{save_path}/train_{os.path.basename(data_path).split('.')[0]}.csv"
-    val_data_save_path = f"{save_path}/val_{os.path.basename(data_path).split('.')[0]}.csv"
-    test_data_save_path = f"{save_path}/test_{os.path.basename(data_path).split('.')[0]}.csv"
+    train_data_save_path = f"{save_root_path}/train_{os.path.basename(data_path).split('.')[0]}.csv"
+    val_data_save_path = f"{save_root_path}/val_{os.path.basename(data_path).split('.')[0]}.csv"
+    test_data_save_path = f"{save_root_path}/test_{os.path.basename(data_path).split('.')[0]}.csv"
 
     return train_data_save_path, val_data_save_path, test_data_save_path
 
-def small_data_split_to_train_val_test(data_path, num_small_data: int, flag, train_ratio=0.8, val_ratio=0.1, save_path=None):
+def small_data_split_to_train_val_test(data_path, num_small_data: int, flag, train_ratio=0.8, val_ratio=0.1, save_root_path="./datasets"):
     """
     data_path: csv数据集文件路径
     train_ratio: 训练集比例  默认值：0.8
     val_ratio:   验证集比例  默认值：0.1
-    save_path:   保存数据集的目录路径，如果不提供，则不保存文件
+    save_root_path:   保存数据集的目录路径，如果不提供，则不保存文件
     flag:        是否划分数据集
     """
     if flag:
@@ -71,15 +71,15 @@ def small_data_split_to_train_val_test(data_path, num_small_data: int, flag, tra
         test_data = df_small.iloc[train_len + val_len:]
 
         # 如果提供了保存路径，则保存数据集
-        if save_path:
-            train_data.to_csv(f"{save_path}/small_train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
-            val_data.to_csv(f"{save_path}/small_val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
-            test_data.to_csv(f"{save_path}/small_test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+        if save_root_path:
+            train_data.to_csv(f"{save_root_path}/num_{num_small_data}_train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            val_data.to_csv(f"{save_root_path}/num_{num_small_data}_val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+            test_data.to_csv(f"{save_root_path}/num_{num_small_data}_test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
             print("数据集划分完成！")
         
-    train_data_save_path = f"{save_path}/small_train_{os.path.basename(data_path).split('.')[0]}.csv"
-    val_data_save_path = f"{save_path}/small_val_{os.path.basename(data_path).split('.')[0]}.csv"
-    test_data_save_path = f"{save_path}/small_test_{os.path.basename(data_path).split('.')[0]}.csv"
+    train_data_save_path = f"{save_root_path}/num_{num_small_data}_train_{os.path.basename(data_path).split('.')[0]}.csv"
+    val_data_save_path = f"{save_root_path}/num_{num_small_data}_val_{os.path.basename(data_path).split('.')[0]}.csv"
+    test_data_save_path = f"{save_root_path}/num_{num_small_data}_test_{os.path.basename(data_path).split('.')[0]}.csv"
 
     return train_data_save_path, val_data_save_path, test_data_save_path
 
