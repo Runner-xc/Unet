@@ -27,6 +27,8 @@ from utils.metrics import Evaluate_Metric
 from torch.utils.tensorboard import SummaryWriter
 import utils.transforms as T
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import LambdaLR
+import math
 from typing import Union, List
 from utils.run_tensorboard import run_tensorboard
 from model.Segnet import SegNet
@@ -63,13 +65,10 @@ class SODPresetEval:
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-
 detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
 
 def main(args):
-
     """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
-    
     # 将args转换为字典
     params = vars(args)
 
@@ -87,13 +86,12 @@ def main(args):
         'scheduler'     : '10. scheduler',
         'Tmax'          : '11. Tmax',
         'eta_min'       : '12. eta_min',
-        'last_epoch'    : '13. last_epoch',
-        'save_flag'     : '14. save_flag',
-        'batch_size'    : '15. batch_size',
-        'num_small_data': '16. num_small_data',
-        'eval_interval' : '17. eval_interval',
-        'split_flag'    : '18. split_flag',
-        'resume'        : '19. resume'
+        'save_flag'     : '13. save_flag',
+        'batch_size'    : '14. batch_size',
+        'num_small_data': '15. num_small_data',
+        'eval_interval' : '16. eval_interval',
+        'split_flag'    : '17. split_flag',
+        'resume'        : '18. resume'
     }
 
     # 筛选需要打印的参数
@@ -166,122 +164,6 @@ def main(args):
     model.to(device)
     model_info = str(summary(model, (1, 3, 256, 256)))  
 
-    # 优化器   TODO: 优化器参数
-    
-    assert args.optimizer in ['AdamW', 'SGD', 'RMSprop'], \
-        f'optimizer must be AdamW, SGD, RMSprop but got {args.optimizer}'
-        
-    if args.optimizer == 'AdamW':
-        optimizer = AdamW(model.parameters(), lr=args.lr, 
-                          weight_decay=args.wd
-                          ) # 会出现梯度爆炸或消失
-
-    elif args.optimizer == 'SGD':
-        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9, 
-                        weight_decay=args.wd
-                        )
-
-    elif args.optimizer == 'RMSprop':
-
-        optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8, 
-                            weight_decay=args.wd
-                            )
-    else:
-        optimizer = AdamW(model.parameters(), lr=args.lr, 
-                          weight_decay=args.wd
-                          )
-    
-    # 调度器
-    assert args.scheduler in ['CosineAnnealingLR', 'ReduceLROnPlateau'], \
-            f'scheduler must be CosineAnnealingLR 、ReduceLROnPlateau, but got {args.scheduler}'
-    if args.scheduler == 'CosineAnnealingLR':
-        if hasattr(optimizer, "param_groups") and len(optimizer.param_groups) > 0 and "initial_lr" not in optimizer.param_groups[0]:
-            # 如果optimizer的param_groups中没有initial_lr，则添加initial_lr
-            for param_group in optimizer.param_groups:
-                param_group['initial_lr'] = param_group['lr']
-        scheduler = CosineAnnealingLR(optimizer,
-                                      T_max=args.Tmax, 
-                                      eta_min=args.eta_min,
-                                      last_epoch=args.last_epoch)
-        
-    elif args.scheduler == 'ReduceLROnPlateau':
-        scheduler = ReduceLROnPlateau(optimizer, 
-                                      mode='min', 
-                                      factor=0.1, 
-                                      patience=5, 
-                                      threshold=1e-4, 
-                                      threshold_mode='rel', 
-                                      cooldown=0, 
-                                      min_lr=0, 
-                                      eps=1e-8)
-    else:
-        scheduler = CosineAnnealingLR(optimizer,
-                                      T_max=args.Tmax, 
-                                      eta_min=args.eta_min,
-                                      last_epoch=args.last_epoch)
-        
-    # 损失函数
-    
-    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd']
-    if args.loss_fn == 'CrossEntropyLoss':
-        loss_fn = CrossEntropyLoss()
-    elif args.loss_fn == 'DiceLoss':
-        loss_fn = diceloss()
-    elif args.loss_fn == 'FocalLoss':
-        loss_fn = Focal_Loss()
-    elif args.loss_fn == 'WDiceLoss':
-        loss_fn = WDiceLoss()
-    elif args.loss_fn == 'DWDLoss':
-        loss_fn = DWDLoss()
-    elif args.loss_fn == 'IoULoss':
-        loss_fn = IOULoss()
-    elif args.loss_fn == 'dice_hd':
-        loss_fn = AdaptiveSegLoss(num_classes=4)
-    
-    # 缩放器
-    scaler = torch.amp.GradScaler() if args.amp else None
-    Metrics = Evaluate_Metric()
-    
-    # 日志保存路径
-    save_logs_path = f"{args.log_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
-    
-    if not os.path.exists(save_logs_path):
-        os.makedirs(save_logs_path)
-    if args.save_flag:
-        if args.elnloss:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}'
-            writer = SummaryWriter(log_path)
-        else:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}'
-            writer = SummaryWriter(log_path)
-    
-    """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
-            
-    # 记录修改后的参数
-    if args.elnloss:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
-    else:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
-    params = vars(args)
-    params_dict['Parameter'] = printed_params
-    params_dict['Value'] = [str(params[p]) for p in printed_params]
-    contents = tabulate(params_dict, headers=params_header, tablefmt="grid")
-
-    mdf = os.path.join(save_modification_path, modification_log_name)
-    if not os.path.exists(os.path.dirname(mdf)):
-        os.makedirs(os.path.dirname(mdf))
-    if args.save_flag:
-        write_experiment_log.write_exp_logs(mdf, contents) 
-    
-    """参数列表"""
-    params = vars(args)
-    params_dict = {}
-    params_dict['Parameter'] = [str(p[0]) for p in list(params.items())]
-    params_dict['Value'] = [str(p[1]) for p in list(params.items())]
-    params_header = ['Parameter', 'Value']
-    """打印参数"""
-    print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
-
     """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     train_ratio = args.train_ratio
     val_ratio = args.val_ratio   
@@ -319,8 +201,129 @@ def main(args):
                                 shuffle=False, 
                                 num_workers=num_workers,
                                 pin_memory=True)
+    
+    """——————————————————————————————————————————————优化器 调度器——————————————————————————————————————————————"""
+    # 优化器 
+    assert args.optimizer in ['AdamW', 'SGD', 'RMSprop'], \
+        f'optimizer must be AdamW, SGD, RMSprop but got {args.optimizer}'
+        
+    if args.optimizer == 'AdamW':
+        optimizer = AdamW(model.parameters(), lr=args.lr, 
+                          weight_decay=args.wd
+                          ) # 会出现梯度爆炸或消失
 
-          
+    elif args.optimizer == 'SGD':
+        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9, 
+                        weight_decay=args.wd
+                        )
+
+    elif args.optimizer == 'RMSprop':
+
+        optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8, 
+                            weight_decay=args.wd
+                            )
+    else:
+        optimizer = AdamW(model.parameters(), lr=args.lr, 
+                          weight_decay=args.wd
+                          )
+        
+    # 调度器
+    assert args.scheduler in ['CosineAnnealingLR', 'ReduceLROnPlateau'], \
+            f'scheduler must be CosineAnnealingLR 、ReduceLROnPlateau, but got {args.scheduler}'
+    if args.scheduler == 'CosineAnnealingLR':
+        # 计算总batch数和warmup步数
+        num_batches_per_epoch = len(train_dataloader)
+        warmup_steps = args.warmup_epochs * num_batches_per_epoch  # 总预热步数
+        Tmax_steps = args.Tmax * num_batches_per_epoch  # 将Tmax从epoch转换为step
+        
+        # 获取初始学习率
+        lr_initial = optimizer.param_groups[0]['lr']
+
+        # 定义带Warmup的Lambda调度器
+        scheduler = LambdaLR(
+            optimizer,
+            lr_lambda=lambda step: (
+                # Warmup阶段：线性增长
+                (step / warmup_steps) if step < warmup_steps
+                # 正常阶段：余弦退火
+                else (args.eta_min + (lr_initial - args.eta_min) * 
+                    (1 + math.cos(math.pi * (step - warmup_steps) / Tmax_steps)) / 2) / lr_initial
+            ),
+            last_epoch=-1  # 初始步数从0开始
+        )
+        
+    elif args.scheduler == 'ReduceLROnPlateau':
+        scheduler = ReduceLROnPlateau(optimizer, 
+                                      mode='min', 
+                                      factor=0.1, 
+                                      patience=5, 
+                                      threshold=1e-4, 
+                                      threshold_mode='rel', 
+                                      cooldown=0, 
+                                      min_lr=0, 
+                                      eps=1e-8)
+    else:
+        print(f"wrong scaler name{args.scheduler}")
+        
+    # 损失函数 
+    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd']
+    if args.loss_fn == 'CrossEntropyLoss':
+        loss_fn = CrossEntropyLoss()
+    elif args.loss_fn == 'DiceLoss':
+        loss_fn = diceloss()
+    elif args.loss_fn == 'FocalLoss':
+        loss_fn = Focal_Loss()
+    elif args.loss_fn == 'WDiceLoss':
+        loss_fn = WDiceLoss()
+    elif args.loss_fn == 'DWDLoss':
+        loss_fn = DWDLoss()
+    elif args.loss_fn == 'IoULoss':
+        loss_fn = IOULoss()
+    elif args.loss_fn == 'dice_hd':
+        loss_fn = AdaptiveSegLoss(num_classes=4)
+    
+    # 缩放器
+    scaler = torch.amp.GradScaler() if args.amp else None
+    Metrics = Evaluate_Metric()
+    
+    # 日志保存路径
+    save_logs_path = f"{args.log_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    
+    if not os.path.exists(save_logs_path):
+        os.makedirs(save_logs_path)
+    if args.save_flag:
+        if args.elnloss:
+            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}'
+            writer = SummaryWriter(log_path)
+        else:
+            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}'
+            writer = SummaryWriter(log_path)
+    
+    """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
+    # 记录修改后的参数
+    if args.elnloss:
+        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
+    else:
+        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
+    params = vars(args)
+    params_dict['Parameter'] = printed_params
+    params_dict['Value'] = [str(params[p]) for p in printed_params]
+    contents = tabulate(params_dict, headers=params_header, tablefmt="grid")
+
+    mdf = os.path.join(save_modification_path, modification_log_name)
+    if not os.path.exists(os.path.dirname(mdf)):
+        os.makedirs(os.path.dirname(mdf))
+    if args.save_flag:
+        write_experiment_log.write_exp_logs(mdf, contents) 
+    
+    """参数列表"""
+    params = vars(args)
+    params_dict = {}
+    params_dict['Parameter'] = [str(p[0]) for p in list(params.items())]
+    params_dict['Value'] = [str(p[1]) for p in list(params.items())]
+    params_header = ['Parameter', 'Value']
+    """打印参数"""
+    print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
             
     """——————————————————————————————————————————————训练 验证——————————————————————————————————————————————"""
     start_epoch = args.start_epoch
@@ -333,15 +336,18 @@ def main(args):
 
     """断点续传"""    
     if args.resume:
-        checkpoint = torch.load(args.resume)
+        torch.serialization.add_safe_globals([argparse.Namespace])
+        checkpoint = torch.load(args.resume, weights_only=True)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
+        scheduler.last_epoch = checkpoint['step']
         best_mean_loss = checkpoint['best_mean_loss']
-        start_epoch = checkpoint['epoch']
+        start_epoch = checkpoint['best_epoch']
         best_epoch = checkpoint['best_epoch']
         print(f"Resume from epoch: {start_epoch}")
-       
+    
+    """训练"""   
     for epoch in range(start_epoch, end_epoch):
         
         print(f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈")
@@ -357,6 +363,7 @@ def main(args):
                                                                                     loss_fn=loss_fn, 
                                                                                     scaler=scaler,
                                                                                     Metric=Metrics,
+                                                                                    scheduler = scheduler,
                                                                                     elnloss=args.elnloss,     #  Elastic Net正则化
                                                                                     l1_lambda=args.l1_lambda,
                                                                                     l2_lambda=args.l2_lambda) # loss_fn=loss_fn, 
@@ -391,11 +398,9 @@ def main(args):
               f"train_mean_loss: {train_mean_loss:.3f}\n"
               f"train_cost_time: {train_cost_time:.2f}s\n")
         
-        # 验证
-        if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
-                      
-            e = best_epoch
 
+        """验证"""
+        if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
             print(f"--Validation-- 😀")
             # 记录验证开始时间
             start_time = time.time()
@@ -409,10 +414,8 @@ def main(args):
             val_mean_loss = mean_loss / len(val_dataloader)
             val_loss_list = [val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss]
             
-            # 更新调度器
-            scheduler.step()
-            current_lr = scheduler.get_last_lr()[0]  # 获取当前学习率
-            
+            # 获取当前学习率
+            current_lr = scheduler.get_last_lr()[0]  
 
             # 评价指标 metrics = [recall, precision, dice, f1_score]
             val_metrics ={}
@@ -435,7 +438,7 @@ def main(args):
                   f"val_IOP_loss: {val_IOP_loss:.3f}\n"
                   f"val_mean_loss: {val_mean_loss:.3f}\n"
                   f"val_cost_time: {val_cost_time:.2f}s\n")
-            print(f"Current learning rate: {current_lr}")
+            print(f"Current learning rate: {current_lr}\n")
             
             # 记录日志
             tb = args.tb
@@ -483,13 +486,10 @@ def main(args):
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
             write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s
-
-            # 打印结果
             print(write_info)
 
             # 保存结果
             save_scores_path = f'{args.save_scores_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}'
-            
             if args.elnloss:
                 results_file = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.txt"
             else:
@@ -503,7 +503,6 @@ def main(args):
                     f.write(write_info)                      
        
         if args.save_flag:
-            
             # 保存best模型
             if args.elnloss:
                 save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
@@ -519,9 +518,9 @@ def main(args):
                     "scheduler": scheduler.state_dict(),
                     "best_mean_loss": best_mean_loss,
                     "best_epoch": best_epoch,
-                    "epoch": epoch,
-                    "model_info": model_info,
-                    "args": args}
+                    "step": scheduler.last_epoch,
+                    "model_info": model_info}
+            
             # 保存当前最佳模型的权重
             best_model_path = f"{save_weights_path}/model_best_ep:{best_epoch}.pth"
             torch.save(save_file, best_model_path)
@@ -546,27 +545,20 @@ def main(args):
         # 记录验证loss是否出现上升       
         if val_mean_loss <= current_mean_loss:
             current_mean_loss = val_mean_loss 
-            patience = 0
-                     
+            patience = 0   
         else:
             patience += 1 
     
         # 早停判断
-        if patience >= 30:
-            
+        if patience >= 50:    
             print('恭喜你触发早停！！')
-            
             break
-        
-        
+
     writer.close()
     total_time = time.time() - initial_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print("====training over. total time: {}".format(total_time_str))
         
-
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
     
@@ -631,15 +623,16 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size',     type=int,   default=8  ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
+    parser.add_argument('--warmup_epochs',  type=int,   default=10,      help='number of warmup epochs')
+
 
     parser.add_argument('--lr',             type=float, default=3e-4,   help='learning rate')
-    parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
+    parser.add_argument('--wd',             type=float, default=1e-4,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
-    parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
-    parser.add_argument('--last_epoch',     type=int,   default=0,      help='start epoch of lr decay for CosineAnnealingLR')
+    parser.add_argument('--eta_min',        type=float, default=1e-7,   help='minimum of lr for CosineAnnealingLR')
 
     args = parser.parse_args()
     main(args)

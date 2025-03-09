@@ -42,7 +42,7 @@ def total_loss(model_output, target, loss_fn):
     return total_loss
   
 
-def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler, Metric, elnloss, l1_lambda, l2_lambda):
+def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler, Metric, scheduler, elnloss, l1_lambda, l2_lambda):
     """"
     model:             模型
     optimizer:         优化器
@@ -51,6 +51,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
     device:            设备
     loss_fn:           损失函数
     scaler:            梯度缩放器
+    scheduler:         调度器
     elnloss:           是否使用Elastic Net正则化
     l1_lambda:         l1正则化系数
     l2_lambda:         l2正则化系数
@@ -135,6 +136,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
         # 更新参数
         scaler.step(optimizer)
         scaler.update()
+        scheduler.step()
 
         epoch_train_loss += train_mean_loss.item()
         epoch_OM_loss += OM_loss.item()
