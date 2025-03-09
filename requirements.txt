@@ -3,6 +3,11 @@ opencv-python
 torch
 torchinfo
 torchvision
+torchinfo
 tqdm
 tabulate
-tensorboard, tensorboardX
+tensorboard
+tensorboardX
+tabulate
+grad-cam
+monai
