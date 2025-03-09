@@ -293,18 +293,18 @@ def main(args):
         os.makedirs(save_logs_path)
     if args.save_flag:
         if args.elnloss:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}'
+            log_path = f'{save_logs_path}/optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
         else:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}'
+            log_path = f'{save_logs_path}/optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
     
     """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
     # 记录修改后的参数
     if args.elnloss:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
+        modification_log_name = f"optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}.md"
     else:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
+        modification_log_name = f"optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}.md"
     params = vars(args)
     params_dict['Parameter'] = printed_params
     params_dict['Value'] = [str(params[p]) for p in printed_params]
@@ -446,11 +446,11 @@ def main(args):
                 writing_logs(writer, train_metrics, val_metrics, epoch)               
                 """-------------------------TXT--------------------------------------------------------"""        
                 writer.add_text('val/Metrics', 
-                                f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
-                                f"model: {args.model}, loss_fn: {args.loss_fn}, scheduler: {args.scheduler}"
+                                f"optim-{args.optimizer}, lr-{args.lr}, wd-{args.wd}, l1_lambda-{args.l1_lambda}, l2_lambda-{args.l2_lambda}"+ '\n'
+                                f"model-{args.model}, loss_fn-{args.loss_fn}, scheduler-{args.scheduler}"
                                 )
                 if epoch == 5:
-                    run_tensorboard(log_path)               
+                    run_tensorboard(log_path, PORT=50091)               
             
             # 保存指标
             if best_mean_loss >= val_mean_loss:
@@ -491,9 +491,9 @@ def main(args):
             # 保存结果
             save_scores_path = f'{args.save_scores_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}'
             if args.elnloss:
-                results_file = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.txt"
+                results_file = f"optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}.txt"
             else:
-                results_file = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.txt"
+                results_file = f"optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}.txt"
             file_path = os.path.join(save_scores_path, results_file)
 
             if not os.path.exists(os.path.dirname(file_path)):
@@ -505,9 +505,9 @@ def main(args):
         if args.save_flag:
             # 保存best模型
             if args.elnloss:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L-{args.loss_fn}--S-{args.scheduler}/optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
             else:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}"
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L-{args.loss_fn}--S-{args.scheduler}/optim-{args.optimizer}-lr-{args.lr}-wd-{args.wd}/{detailed_time_str}"
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
@@ -618,9 +618,9 @@ if __name__ == '__main__':
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
     # 训练参数
-    parser.add_argument('--train_ratio',    type=float, default=0.7) 
-    parser.add_argument('--val_ratio',      type=float, default=0.1)
-    parser.add_argument('--batch_size',     type=int,   default=8  ) 
+    parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
+    parser.add_argument('--val_ratio',      type=float, default=0.1     )
+    parser.add_argument('--batch_size',     type=int,   default=32      ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
     parser.add_argument('--warmup_epochs',  type=int,   default=10,      help='number of warmup epochs')
