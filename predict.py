@@ -189,14 +189,14 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/datasets/CSV/test_rock_sem_chged_256_a50_c80.csv')
+    parser.add_argument('--data_path',      type=str,       default='/home/tom/Unet/datasets/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size',      type=int,       default=256)
     parser.add_argument('--model_name',     type=str,       default='msaf_unetv2',     help=' unet, a_unet, a_unetv2, m_unet, msaf_unet, msaf_unetv2, ResD_unet, aicunet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unetv2/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-03-08_20:51:06/model_best_ep:26.pth')
+                                            default='/home/tom/Unet/results/save_weights/msaf_unetv2/L-DiceLoss--S-CosineAnnealingLR/optim-AdamW-lr-0.0008-wd-1e-06/2025-03-10_09:44:44/model_best_ep:121.pth')
     
-    parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
-    parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/single_predict')
+    parser.add_argument('--save_path',      type=str,       default='/home/tom/Unet/results/predict')
+    parser.add_argument('--single_path',    type=str,       default='/home/tom/Unet/results/single_predict')
     parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
     
     

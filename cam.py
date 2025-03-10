@@ -175,7 +175,7 @@ def main(args):
 
     name = args.name    
     # 保存图片
-    save_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/cam_img"
+    save_path = "/home/tom/Unet/results/cam_img"
     OM_cam_img = Image.fromarray(OM_cam_image)
     OM_cam_img.save(os.path.join(save_path, f"{name}_OM.jpg"))
 
@@ -191,7 +191,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="cam images")
 
     parser.add_argument('--weight_path',        type=str,
-                        default="/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/a_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-22_18:36:07/model_best_ep:102.pth")
+                        default="/home/tom/Unet/results/save_weights/a_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-22_18:36:07/model_best_ep:102.pth")
     
     parser.add_argument('--model',              type=str, 
                         default="msaf_unetv2", 

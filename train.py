@@ -111,7 +111,7 @@ def main(args):
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"{args.modification_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_modification_path = f"{args.modification_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
             
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
     
@@ -189,7 +189,7 @@ def main(args):
     val_datasets = SEM_DATA(val_datasets, 
                             transforms=SODPresetEval((256, 256)))
     
-    num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
+    num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 7])
     train_dataloader = DataLoader(train_datasets, 
                                 batch_size=batch_size, 
                                 shuffle=True, 
@@ -287,7 +287,7 @@ def main(args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"{args.log_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_logs_path = f"{args.log_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
@@ -489,7 +489,7 @@ def main(args):
             print(write_info)
 
             # 保存结果
-            save_scores_path = f'{args.save_scores_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}'
+            save_scores_path = f'{args.save_scores_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}'
             if args.elnloss:
                 results_file = f"optim-{args.optimizer}-lr-{args.lr}-l1-{args.l1_lambda}-l2-{args.l2_lambda}/{detailed_time_str}.txt"
             else:
@@ -522,25 +522,25 @@ def main(args):
                     "model_info": model_info}
             
             # 保存当前最佳模型的权重
-            best_model_path = f"{save_weights_path}/model_best_ep:{best_epoch}.pth"
+            best_model_path = f"{save_weights_path}/model_best_ep_{best_epoch}.pth"
             torch.save(save_file, best_model_path)
             print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")
             # 删除之前保存的所有包含"model_best"的文件
             path_list = os.listdir(save_weights_path)
             for i in path_list:
-                if "model_best" in i and i != f"model_best_ep:{best_epoch}.pth":
+                if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
                     os.remove(os.path.join(save_weights_path, i))
                     print(f"remove last best weight:{i}")
                             
             current_miou = val_metrics["mIoU"][-1]
 
             # only save latest 10 epoch weights
-            if os.path.exists(f"{save_weights_path}/model_ep:{epoch-10}.pth"):
-                os.remove(f"{save_weights_path}/model_ep:{epoch-10}.pth")
+            if os.path.exists(f"{save_weights_path}/model_ep_{epoch-10}.pth"):
+                os.remove(f"{save_weights_path}/model_ep_{epoch-10}.pth")
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
-            torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth") 
+            torch.save(save_file, f"{save_weights_path}/model_ep_{epoch}.pth") 
         
         # 记录验证loss是否出现上升       
         if val_mean_loss <= current_mean_loss:
@@ -564,24 +564,24 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
-                        default="/root/projects/WS-U2net/U-2-Net/datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
+                        default="/home/tom/Unet/datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
                         help="path to csv dataset")
     
     parser.add_argument('--data_root_path',  type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/datasets/CSV")
+                        default="/home/tom/Unet/datasets/CSV")
     
     # results
     parser.add_argument('--save_scores_path',   type=str, 
-                        default='/root/projects/WS-U2net/U-2-Net/results/save_scores')
+                        default='/home/tom/Unet/results/save_scores')
     
     parser.add_argument('--save_weight_path',   type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/save_weights")
+                        default="/home/tom/Unet/results/save_weights")
     
     parser.add_argument('--log_path',  type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/logs")
+                        default="/home/tom/Unet/results/logs")
     
     parser.add_argument('--modification_path', type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/modification_log")
+                        default="/home/tom/Unet/results/modification_log")
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
@@ -623,16 +623,16 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size',     type=int,   default=32      ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
-    parser.add_argument('--warmup_epochs',  type=int,   default=10,      help='number of warmup epochs')
+    parser.add_argument('--warmup_epochs',  type=int,   default=10,     help='number of warmup epochs')
 
 
-    parser.add_argument('--lr',             type=float, default=3e-4,   help='learning rate')
-    parser.add_argument('--wd',             type=float, default=1e-4,   help='weight decay')
+    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
-    parser.add_argument('--eta_min',        type=float, default=1e-7,   help='minimum of lr for CosineAnnealingLR')
+    parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
 
     args = parser.parse_args()
     main(args)
