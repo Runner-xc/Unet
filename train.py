@@ -65,7 +65,7 @@ class SODPresetEval:
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
+detailed_time_str = time.strftime("%Y-%m-%d_%H-%M-%S")
 
 def main(args):
     """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
@@ -535,8 +535,8 @@ def main(args):
             current_miou = val_metrics["mIoU"][-1]
 
             # only save latest 10 epoch weights
-            if os.path.exists(f"{save_weights_path}/model_ep_{epoch-10}.pth"):
-                os.remove(f"{save_weights_path}/model_ep_{epoch-10}.pth")
+            if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
+                os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
@@ -585,7 +585,7 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="msaf_unetv2", 
+                        default="pspnet", 
                         help=" unet, ResD_unet, msaf_unet, msaf_unetv2, a_unet, a_unetv2, m_unet, aicunet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
@@ -620,10 +620,10 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7     ) 
     parser.add_argument('--val_ratio',      type=float, default=0.1     )
-    parser.add_argument('--batch_size',     type=int,   default=32      ) 
+    parser.add_argument('--batch_size',     type=int,   default=128      ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
-    parser.add_argument('--warmup_epochs',  type=int,   default=10,     help='number of warmup epochs')
+    parser.add_argument('--warmup_epochs',  type=int,   default=3,     help='number of warmup epochs')
 
 
     parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')

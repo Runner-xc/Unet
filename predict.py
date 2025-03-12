@@ -102,7 +102,7 @@ def main(args):
     Metric = Evaluate_Metric()  
     if args.single:
         # test 单张
-        path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
+        path = '/home/tom/Unet/Image1 - 003.jpeg'
         img = Image.open(path).convert('RGB')
         img = np.array(img)
         
@@ -193,11 +193,11 @@ if __name__ == '__main__':
     parser.add_argument('--base_size',      type=int,       default=256)
     parser.add_argument('--model_name',     type=str,       default='msaf_unetv2',     help=' unet, a_unet, a_unetv2, m_unet, msaf_unet, msaf_unetv2, ResD_unet, aicunet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/home/tom/Unet/results/save_weights/msaf_unetv2/L-DiceLoss--S-CosineAnnealingLR/optim-AdamW-lr-0.0008-wd-1e-06/2025-03-10_09:44:44/model_best_ep:121.pth')
+                                            default='/home/tom/Unet/results/save_weights/msaf_unetv2/L-DiceLoss--S-CosineAnnealingLR/optim-AdamW-lr-0.0008-wd-1e-06/2025-03-10_09:44:44/model_best_ep_121.pth')
     
     parser.add_argument('--save_path',      type=str,       default='/home/tom/Unet/results/predict')
     parser.add_argument('--single_path',    type=str,       default='/home/tom/Unet/results/single_predict')
-    parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
+    parser.add_argument('--single',         type=bool,      default=True,          help='test single img or not')
     
     
     args = parser.parse_args()
