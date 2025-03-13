@@ -70,15 +70,6 @@ def param_modification(args, x):
             x = input("如需继续修改，请输入参数序号（1-16），输入 '0' 退出.")
         else:
             x = input("无效的输入，请重新输入:")
-
-
-    # 构建参数内容字符串
-#     content = f"lr:{c_lr}\nl1_lambda:{c_l1_lambda}\nl2_lambda:{c_l2_lambda}\n\
-# dropout_p:{c_dropout_p}\neval_interval:{c_eval_interval}\nbatch_size:{c_batch_size}\n\
-# optimizer:{c_optimizer}\nsmall_data:{c_small_data}\nTmax:{c_Tmax}\neta_min:{c_eta_min}\n\
-# last_epoch:{c_last_epoch}\nsave_weights:{c_save_weights}\nscheduler:{c_scheduler}\n\
-# model:{c_model}\nloss_fn:{c_loss_fn}\nsplit_flag:{c_split_flag}"
-    
     return args
 
 if __name__ == '__main__':

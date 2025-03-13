@@ -140,22 +140,24 @@ class MSAF_UNetv2(nn.Module):
         self.msaf4 = EMAF(base_channels*8)
         # dropout
         self.encoder_dropout = nn.Dropout2d(p=p)                            # 编码器更高dropout
-        self.decoder_dropout = nn.Dropout2d(p=p-0.1 if p-0.1>0 else 0.0)    # 解码器较低dropout
-        self.bottleneck_dropout = nn.Dropout2d(p=p+0.1 if p!=0.0 else 0.0)
-
+    
         # self.dense_aspp = DenseASPPBlock(base_channels*8, base_channels*4, base_channels*8)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.center_conv = DoubleConv(base_channels*8, base_channels*8, mid_channels=base_channels*16)
-        
+        self.bottleneck_dropout = nn.Dropout2d(p=p+0.1 if p!=0.0 else 0.0)
+
         # 解码器
         self.up1 = ResD_Up(base_channels * 8 , base_channels * 4, bilinear=bilinear)
         self.acpn5 = ACPNv2(base_channels*4)
+        self.decoder_dropout1 = nn.Dropout2d(0.15)   
 
         self.up2 = ResD_Up(base_channels * 4, base_channels * 2 , bilinear=bilinear)
         self.acpn6 = ACPNv2(base_channels*2)    
-     
+        self.decoder_dropout2 = nn.Dropout2d(0.1) 
+
         self.up3 = ResD_Up(base_channels * 2, base_channels, bilinear=bilinear)
         self.acpn7 = ACPNv2(base_channels)
+        self.decoder_dropout3 = nn.Dropout2d(0.05) 
 
         self.up4 = Up(base_channels, base_channels, bilinear=bilinear)
         self.acpn8 = ACPNv2(base_channels)
@@ -168,6 +170,7 @@ class MSAF_UNetv2(nn.Module):
         m1 = self.msaf1(e1)                              # [b, 32, 256, 256]
 
         e2 = self.down1(x1)                              # [b, 64, 128, 128]
+
         a2 = self.acpn1(e2)
         m2 = self.msaf2(e2)
         x2 = self.encoder_dropout(a2)
@@ -189,19 +192,18 @@ class MSAF_UNetv2(nn.Module):
 
         d4 = self.up1(c5, m4)                            # [b, 256, 32, 32]
         d4 = self.acpn5(d4)
-        x = self.decoder_dropout(d4)   
+        x = self.decoder_dropout1(d4)   
 
         d3 = self.up2(x, m3)                             # [b, 128, 64, 64]
         d3 = self.acpn6(d3)
-        x = self.decoder_dropout(d3)
+        x = self.decoder_dropout2(d3)
 
         d2 = self.up3(x, m2)                             # [b, 64, 128, 128]
         d2 = self.acpn7(d2)
-        x = self.decoder_dropout(d2)
+        x = self.decoder_dropout3(d2)
 
         d1 = self.up4(x, m1)                             # [1, 64, 256, 256]
-        d1 = self.acpn8(d1)
-        x = self.decoder_dropout(d1)
+        x = self.acpn8(d1)
         logits = self.out_conv(x)                        # [1, c, 256, 256]
         
         return logits

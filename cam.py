@@ -191,7 +191,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="cam images")
 
     parser.add_argument('--weight_path',        type=str,
-                        default="/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/a_unet/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-02-22_18:36:07/model_best_ep:102.pth")
+                        default="/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unetv2/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-03-10_09-44-44/model_best_ep_121.pth")
     
     parser.add_argument('--model',              type=str, 
                         default="msaf_unetv2", 
@@ -199,4 +199,6 @@ if __name__ == "__main__":
                                                 Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--name',               type=str,
-                        default='ResD+A+bottleneck_dropout',  help="names of saving images")
+                        default='msaf_unetv2',  help="names of saving images")
+    args = parser.parse_args()
+    main(args)

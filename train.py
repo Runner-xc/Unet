@@ -111,17 +111,51 @@ def main(args):
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"{args.modification_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
-            
-    """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""  
-    
+    save_modification_path = f"{args.modification_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
+
+    """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     # 定义设备
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     batch_size = args.batch_size
 
-         
-    # 加载模型
+    train_ratio = args.train_ratio
+    val_ratio = args.val_ratio   
+
+    # 划分数据集
+    if args.num_small_data is not None:
+        train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
+                                                                                                    num_small_data=args.num_small_data, 
+                                                                                                    # train_ratio=0.8, 
+                                                                                                    # val_ratio=0.1, 
+                            save_root_path=args.data_root_path,
+                            flag=args.split_flag) 
     
+    else:
+        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
+                            save_root_path=args.data_root_path,   # 保存划分好的数据集路径
+                            flag=args.split_flag)
+
+    # 读取数据集
+    train_datasets = SEM_DATA(train_datasets, 
+                            transforms=SODPresetTrain((256, 256), crop_size=256))
+    
+    val_datasets = SEM_DATA(val_datasets, 
+                            transforms=SODPresetEval((256, 256)))
+    
+    num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
+    train_dataloader = DataLoader(train_datasets, 
+                                batch_size=batch_size, 
+                                shuffle=True, 
+                                num_workers=num_workers,
+                                pin_memory=True)
+    
+    val_dataloader = DataLoader(val_datasets, 
+                                batch_size=8, 
+                                shuffle=False, 
+                                num_workers=num_workers,
+                                pin_memory=True)
+    """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
+    # 加载模型
     assert args.model in ["u2net_full", "u2net_lite", "unet", "aicunet", "ResD_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet", "msaf_unet", "msaf_unetv2", "a_unet", "a_unetv2", "m_unet"], \
         f"wrong model: {args.model}"
     if args.model =="u2net_full":
@@ -163,44 +197,6 @@ def main(args):
     kaiming_initial(model)
     model.to(device)
     model_info = str(summary(model, (1, 3, 256, 256)))  
-
-    """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
-    train_ratio = args.train_ratio
-    val_ratio = args.val_ratio   
-
-    # 划分数据集
-    if args.num_small_data is not None:
-        train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
-                                                                                                    num_small_data=args.num_small_data, 
-                                                                                                    # train_ratio=0.8, 
-                                                                                                    # val_ratio=0.1, 
-                            save_root_path=args.data_root_path,
-                            flag=args.split_flag) 
-    
-    else:
-        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
-                            save_root_path=args.data_root_path,   # 保存划分好的数据集路径
-                            flag=args.split_flag)
-
-    # 读取数据集
-    train_datasets = SEM_DATA(train_datasets, 
-                            transforms=SODPresetTrain((256, 256), crop_size=256))
-    
-    val_datasets = SEM_DATA(val_datasets, 
-                            transforms=SODPresetEval((256, 256)))
-    
-    num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
-    train_dataloader = DataLoader(train_datasets, 
-                                batch_size=batch_size, 
-                                shuffle=True, 
-                                num_workers=num_workers,
-                                pin_memory=True)
-    
-    val_dataloader = DataLoader(val_datasets, 
-                                batch_size=8, 
-                                shuffle=False, 
-                                num_workers=num_workers,
-                                pin_memory=True)
     
     """——————————————————————————————————————————————优化器 调度器——————————————————————————————————————————————"""
     # 优化器 
@@ -287,24 +283,24 @@ def main(args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"{args.log_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}"
+    save_logs_path = f"{args.log_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
     if args.save_flag:
         if args.elnloss:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}'
+            log_path = f'{save_logs_path}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
         else:
-            log_path = f'{save_logs_path}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}'
+            log_path = f'{save_logs_path}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
     
     """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
     # 记录修改后的参数
     if args.elnloss:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.md"
+        modification_log_name = f"optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.md"
     else:
-        modification_log_name = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.md"
+        modification_log_name = f"optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.md"
     params = vars(args)
     params_dict['Parameter'] = printed_params
     params_dict['Value'] = [str(params[p]) for p in printed_params]
@@ -369,22 +365,22 @@ def main(args):
                                                                                     l2_lambda=args.l2_lambda) # loss_fn=loss_fn, 
         
         # 求平均
-        train_OM_loss = T_OM_loss / len(train_dataloader)
-        train_OP_loss = T_OP_loss / len(train_dataloader)
-        train_IOP_loss = T_IOP_loss / len(train_dataloader)
+        train_OM_loss   = T_OM_loss / len(train_dataloader)
+        train_OP_loss   = T_OP_loss / len(train_dataloader)
+        train_IOP_loss  = T_IOP_loss / len(train_dataloader)
         train_mean_loss = train_loss / len(train_dataloader)
         
         train_loss_list = [train_OM_loss, train_OP_loss, train_IOP_loss, train_mean_loss]
         # 评价指标 metrics = [recall, precision, dice, f1_score]
-        train_metrics ={}
-        train_metrics[epoch] = epoch
-        train_metrics["Loss"] = train_loss_list
-        train_metrics["Recall"] = T_Metric_list[0]
-        train_metrics["Precision"] = T_Metric_list[1]
-        train_metrics["Dice"] = T_Metric_list[2]
-        train_metrics["F1_scores"] = T_Metric_list[3]
-        train_metrics["mIoU"] = T_Metric_list[4]
-        train_metrics["Accuracy"] = T_Metric_list[5]
+        train_metrics               ={}
+        train_metrics[epoch]        = epoch
+        train_metrics["Loss"]       = train_loss_list
+        train_metrics["Recall"]     = T_Metric_list[0]
+        train_metrics["Precision"]  = T_Metric_list[1]
+        train_metrics["Dice"]       = T_Metric_list[2]
+        train_metrics["F1_scores"]  = T_Metric_list[3]
+        train_metrics["mIoU"]       = T_Metric_list[4]
+        train_metrics["Accuracy"]   = T_Metric_list[5]
         
         # 结束时间
         end_time = time.time()
@@ -408,25 +404,25 @@ def main(args):
             mean_loss,OM_loss,OP_loss,IOP_loss, Metric_list = evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
 
             # 求平均
-            val_OM_loss = OM_loss / len(val_dataloader)
-            val_OP_loss = OP_loss / len(val_dataloader)
-            val_IOP_loss = IOP_loss / len(val_dataloader)
-            val_mean_loss = mean_loss / len(val_dataloader)
-            val_loss_list = [val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss]
+            val_OM_loss     = OM_loss / len(val_dataloader)
+            val_OP_loss     = OP_loss / len(val_dataloader)
+            val_IOP_loss    = IOP_loss / len(val_dataloader)
+            val_mean_loss   = mean_loss / len(val_dataloader)
+            val_loss_list   = [val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss]
             
             # 获取当前学习率
             current_lr = scheduler.get_last_lr()[0]  
 
             # 评价指标 metrics = [recall, precision, dice, f1_score]
-            val_metrics ={}
-            val_metrics[epoch] = epoch
-            val_metrics["Loss"] = val_loss_list
-            val_metrics["Recall"] = Metric_list[0]
-            val_metrics["Precision"] = Metric_list[1]
-            val_metrics["Dice"] = Metric_list[2]
-            val_metrics["F1_scores"] = Metric_list[3]
-            val_metrics["mIoU"] = Metric_list[4]
-            val_metrics["Accuracy"] = Metric_list[5]
+            val_metrics                 ={}
+            val_metrics[epoch]          = epoch
+            val_metrics["Loss"]         = val_loss_list
+            val_metrics["Recall"]       = Metric_list[0]
+            val_metrics["Precision"]    = Metric_list[1]
+            val_metrics["Dice"]         = Metric_list[2]
+            val_metrics["F1_scores"]    = Metric_list[3]
+            val_metrics["mIoU"]         = Metric_list[4]
+            val_metrics["Accuracy"]     = Metric_list[5]
             # 验证====结束时间
             end_time = time.time()
             val_cost_time = end_time - start_time
@@ -456,23 +452,23 @@ def main(args):
             if best_mean_loss >= val_mean_loss:
                 best_mean_loss = val_mean_loss
                 best_epoch = epoch + 1
-            metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
-            metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
-            epoch_s = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
-            model_s = f"model : {args.model} \n"
-            lr_s = f"lr : {args.lr} \n"
-            wd_s = f"wd : {args.wd} \n"  #####
-            dropout_s = f"dropout : {args.dropout_p} \n"
-            l1_lambda = f"l1_lambda : {args.l1_lambda} \n"
-            l2_lambda = f"l2_lambda : {args.l2_lambda} \n"
-            scheduler_s = f"scheduler : {args.scheduler} \n"
-            loss_fn_s = f"loss_fn : {args.loss_fn} \n"
-            best_epoch_s = f"best_epoch : {best_epoch} \n"
-            time_s = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
-            cost_s = f"cost_time :{val_cost_time / 60:.2f}mins \n"
+            metrics_table_header    = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
+            metrics_table_left      = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
+            epoch_s                 = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
+            model_s                 = f"model : {args.model} \n"
+            lr_s                    = f"lr : {args.lr} \n"
+            wd_s                    = f"wd : {args.wd} \n"  #####
+            dropout_s               = f"dropout : {args.dropout_p} \n"
+            l1_lambda               = f"l1_lambda : {args.l1_lambda} \n"
+            l2_lambda               = f"l2_lambda : {args.l2_lambda} \n"
+            scheduler_s             = f"scheduler : {args.scheduler} \n"
+            loss_fn_s               = f"loss_fn : {args.loss_fn} \n"
+            best_epoch_s            = f"best_epoch : {best_epoch} \n"
+            time_s                  = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
+            cost_s                  = f"cost_time :{val_cost_time / 60:.2f}mins \n"
             
-            metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
-            metrics_table = [[metric_name,
+            metrics_dict    = {scores : val_metrics[scores] for scores in metrics_table_left}
+            metrics_table   = [[metric_name,
                               metrics_dict[metric_name][-1],
                               metrics_dict[metric_name][0],
                               metrics_dict[metric_name][1],
@@ -480,20 +476,20 @@ def main(args):
                             ]
                              for metric_name in metrics_table_left
                             ]
-            table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-            train_loss_s = f"train_loss : {train_mean_loss:.3f}  🍎🍎🍎\n"
-            loss_s = f"val_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
+            table_s         = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
+            train_loss_s    = f"train_loss : {train_mean_loss:.3f}  🍎🍎🍎\n"
+            loss_s          = f"val_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
 
             # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s
+            write_info      = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s
             print(write_info)
 
             # 保存结果
-            save_scores_path = f'{args.save_scores_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}'
+            save_scores_path = f'{args.save_scores_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}'
             if args.elnloss:
-                results_file = f"optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}.txt"
+                results_file = f"optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.txt"
             else:
-                results_file = f"optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}.txt"
+                results_file = f"optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.txt"
             file_path = os.path.join(save_scores_path, results_file)
 
             if not os.path.exists(os.path.dirname(file_path)):
@@ -505,42 +501,42 @@ def main(args):
         if args.save_flag:
             # 保存best模型
             if args.elnloss:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-l1: {args.l1_lambda}-l2: {args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
             else:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L: {args.loss_fn}--S: {args.scheduler}/optim: {args.optimizer}-lr: {args.lr}-wd: {args.wd}/{detailed_time_str}"
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
 
-            save_file = {"model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "Metrics": Metrics.state_dict(),
-                    "scheduler": scheduler.state_dict(),
-                    "best_mean_loss": best_mean_loss,
-                    "best_epoch": best_epoch,
-                    "step": scheduler.last_epoch,
-                    "model_info": model_info}
+            save_file = {"model"        : model.state_dict(),
+                        "optimizer"     : optimizer.state_dict(),
+                        "Metrics"       : Metrics.state_dict(),
+                        "scheduler"     : scheduler.state_dict(),
+                        "best_mean_loss": best_mean_loss,
+                        "best_epoch"    : best_epoch,
+                        "step"          : scheduler.last_epoch,
+                        "model_info"    : model_info}
             
             # 保存当前最佳模型的权重
-            best_model_path = f"{save_weights_path}/model_best_ep:{best_epoch}.pth"
+            best_model_path = f"{save_weights_path}/model_best_ep_{best_epoch}.pth"
             torch.save(save_file, best_model_path)
             print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")
             # 删除之前保存的所有包含"model_best"的文件
             path_list = os.listdir(save_weights_path)
             for i in path_list:
-                if "model_best" in i and i != f"model_best_ep:{best_epoch}.pth":
+                if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
                     os.remove(os.path.join(save_weights_path, i))
                     print(f"remove last best weight:{i}")
                             
             current_miou = val_metrics["mIoU"][-1]
 
-            # only save latest 10 epoch weights
-            if os.path.exists(f"{save_weights_path}/model_ep:{epoch-10}.pth"):
-                os.remove(f"{save_weights_path}/model_ep:{epoch-10}.pth")
+            # only save latest 3 epoch weights
+            if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
+                os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
-            torch.save(save_file, f"{save_weights_path}/model_ep:{epoch}.pth") 
+            torch.save(save_file, f"{save_weights_path}/model_ep_{epoch}.pth") 
         
         # 记录验证loss是否出现上升       
         if val_mean_loss <= current_mean_loss:
@@ -626,13 +622,13 @@ if __name__ == '__main__':
     parser.add_argument('--warmup_epochs',  type=int,   default=10,      help='number of warmup epochs')
 
 
-    parser.add_argument('--lr',             type=float, default=3e-4,   help='learning rate')
-    parser.add_argument('--wd',             type=float, default=1e-4,   help='weight decay')
+    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
-    parser.add_argument('--eta_min',        type=float, default=1e-7,   help='minimum of lr for CosineAnnealingLR')
+    parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
 
     args = parser.parse_args()
     main(args)
