@@ -22,6 +22,7 @@ from utils.loss_fn import *
 from utils.metrics import Evaluate_Metric
 import utils.transforms as T
 from typing import Union, List
+from utils.slide_predict import SlidingWindowPredictor
 
 class SODPresetEval:
     def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
@@ -34,7 +35,7 @@ class SODPresetEval:
     def __call__(self, img, target):
         data = self.transforms(img, target)
         return data
-
+    
 t = time.strftime("%Y%m%d_%H%M%S", time.localtime())
 def main(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -92,43 +93,54 @@ def main(args):
     
     
     # 加载模型权重
-    pretrain_weights = torch.load(args.weights_path)
+    pretrain_weights = torch.load(args.weights_path, weights_only=False)
     if "model" in pretrain_weights:
         model.load_state_dict(pretrain_weights["model"])
     else:
         model.load_state_dict(pretrain_weights)
         
     model = model.to(device)
-    
-    Metric = Evaluate_Metric()  
+    model.eval()
+    Metric = Evaluate_Metric()
+
+    # 创建优化后的预测器
+    predictor = SlidingWindowPredictor(
+        model=model,
+        device=device,
+        window_size=1024,
+        stride=512  # 重叠步长设置为窗口大小的一半
+    )
+
     if args.single:
-        # test 单张
-        path = '/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg'
-        img = Image.open(path).convert('RGB')
-        img = np.array(img)
+        # 单张预测
+        image_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg"
+        # 滑窗预测
+        if args.slide:
+            save_path = f"{args.single_path}/{args.model_name}_sliding.png"
+            predictor.predict(image_path, save_path)
         
-        img = torchvision.transforms.ToTensor()(img)
-        # img = torchvision.transforms.Resize((1024,1024))(img)
-        img = img.to(device)
-        img = img.unsqueeze(0)
-        logits = model(img)
-        pred_mask = torch.argmax(logits, dim=1)  # [1, 320, 320]
-        pred_mask = pred_mask.squeeze(0)  # [320, 320]        
-        pred_mask = pred_mask.to(torch.uint8)       
-        pred_mask = pred_mask.cpu()
-        pred_mask_np = pred_mask.numpy()
-        pred_img_pil = Image.fromarray(pred_mask_np)
-        # 保存图片
-        single_path = args.single_path
-        if not os.path.exists(single_path):
-            os.mkdir(single_path)
-        pred_img_pil.save(f"{single_path}/{args.model_name}.png")        
-        print("预测完成!")
+        else:
+            img = Image.open(image_path).convert('RGB')
+            img = np.array(img)
+            img = torchvision.transforms.ToTensor()(img).to(device)
+            # img = torchvision.transforms.Resize((1024,1024))(img)
+            img = img.unsqueeze(0)
+            logits = model(img)
+            pred_mask = torch.argmax(logits, dim=1)  
+            pred_mask = pred_mask.squeeze(0)          
+            pred_mask = pred_mask.to(torch.uint8).cpu()       
+            pred_mask_np = pred_mask.numpy()
+            pred_img_pil = Image.fromarray(pred_mask_np)
+            # 保存图片
+            single_path = args.single_path
+            if not os.path.exists(single_path):
+                os.mkdir(single_path)
+            pred_img_pil.save(f"{single_path}/{args.model_name}.png")        
+            print("预测完成!")
        
     else:
         # test 多张
         with torch.no_grad():
-            model.eval()
             Metric_list = np.zeros((6, 4))
             test_loader = tqdm(test_loader, desc=f"  Validating  😀", leave=False)
             save_path = f"{args.save_path}/{args.model_name}"
@@ -194,12 +206,12 @@ if __name__ == '__main__':
     parser.add_argument('--base_size',      type=int,       default=256)
     parser.add_argument('--model_name',     type=str,       default='msaf_unetv2',     help=' unet, a_unet, a_unetv2, m_unet, msaf_unet, msaf_unetv2, ResD_unet, aicunet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unetv2/L: DiceLoss--S: CosineAnnealingLR/optim: AdamW-lr: 0.0008-wd: 1e-06/2025-03-08_20:51:06/model_best_ep:26.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unetv2/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_1e-06/2025-03-12_15:38:06/model_best_ep_40.pth')
     
     parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
     parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/single_predict')
-    parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
-    
+    parser.add_argument('--single',         type=bool,      default=True,          help='test single img or not')
+    parser.add_argument('--slide',          type=bool,      default=True)
     
     args = parser.parse_args()
     main(args)
