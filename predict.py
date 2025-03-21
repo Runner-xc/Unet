@@ -200,7 +200,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/datasets/CSV/test_rock_sem_chged_256_a50_c80.csv')
     parser.add_argument('--base_size',      type=int,       default=256)
-    parser.add_argument('--model_name',     type=str,       default='msaf_unetv2',     help=' unet, a_unet, a_unetv2, m_unet, msaf_unet, msaf_unetv2, ResD_unet, aicunet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--model_name',     type=str,       default='msaf_unetv2',     help=' unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
                                             default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unetv2/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_1e-06/2025-03-12_15:38:06/model_best_ep_40.pth')
     
