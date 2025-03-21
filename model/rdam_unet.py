@@ -13,11 +13,7 @@ class OutConv(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return x
-<<<<<<< HEAD
       
-=======
-       
->>>>>>> 7d79757 (ud pred train)
 class RDAM_UNet(nn.Module):
     def __init__(self, in_channels,
                  n_classes,
@@ -33,37 +29,21 @@ class RDAM_UNet(nn.Module):
         # 编码器
         self.inconv = DoubleConv(in_channels, base_channels)
         self.acpn0 = AMSFN(base_channels)
-<<<<<<< HEAD
-        self.msaf1 = MADM(base_channels) 
-
-        self.down1 = ResD_Down(base_channels, base_channels*2)
-        self.acpn1 = AMSFN(base_channels*2)       
-        self.msaf2 = MADM(base_channels*2)
-=======
         self.msaf1 = MDAM(base_channels) 
 
         self.down1 = ResD_Down(base_channels, base_channels*2)
         self.acpn1 = AMSFN(base_channels*2)       
         self.msaf2 = MDAM(base_channels*2)
->>>>>>> 7d79757 (ud pred train)
         self.encoder_dropout2 = nn.Dropout2d(p=p-0.2 if p!=0 else 0)  
 
         self.down2 = ResD_Down(base_channels*2, base_channels*4)
         self.acpn2 = AMSFN(base_channels*4) 
-<<<<<<< HEAD
-        self.msaf3 = MADM(base_channels*4)
-=======
         self.msaf3 = MDAM(base_channels*4)
->>>>>>> 7d79757 (ud pred train)
         self.encoder_dropout3 = nn.Dropout2d(p=p-0.1 if p!=0 else 0)  
 
         self.down3 = ResD_Down(base_channels*4, base_channels*8)
         self.acpn3 = AMSFN(base_channels*8)
-<<<<<<< HEAD
-        self.msaf4 = MADM(base_channels*8)
-=======
         self.msaf4 = MDAM(base_channels*8)
->>>>>>> 7d79757 (ud pred train)
         self.encoder_dropout4 = nn.Dropout2d(p=p)                            # 编码器更高dropout
     
         # self.dense_aspp = DenseASPPBlock(base_channels*8, base_channels*4, base_channels*8)
