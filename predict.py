@@ -5,15 +5,16 @@ from torch.utils.data import DataLoader, Dataset
 from utils.my_data import SEM_DATA
 import argparse
 import time
-from model.deeplabv3 import deeplabv3_resnet50
+from model.deeplabv3 import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
 from model.pspnet import PSPNet
 from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
-from model.a_unet import A_UNet, A_UNetv2
+from model.a_unet import A_UNet
 from model.m_unet import M_UNet
-from model.msaf_unet import MSAF_UNet, MSAF_UNetv2
+from model.rdam_unet import RDAM_UNet
+from model.vm_unet import VMUNet
 from tqdm import tqdm
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -51,45 +52,40 @@ def main(args):
     
     
     # 加载模型
-    if args.model_name == 'unet':
-        model = UNet(
-                    in_channels=3,
-                    n_classes=4,
-                    p=0)
-    elif args.model_name == 'u2net_full':
+    if args.model =="u2net_full":
         model = u2net_full_config()
-    elif args.model_name == 'u2net_lite':
+    elif args.model =="u2net_lite":
         model = u2net_lite_config()
-    elif args.model_name == 'ResD_unet':
-        model = ResD_UNet(
-                    in_channels=3,
-                    n_classes=4,
-                    p=0)
-    elif args.model_name == 'Segnet':
-        model = SegNet(n_classes=4, dropout_p=0)
     
-    elif args.model_name == "pspnet":
-        model = PSPNet(classes=4, dropout=0)
-
-    elif args.model_name == "deeplabv3":
-        model = deeplabv3_resnet50(num_classes=4, pretrain_backbone=False, aux=False)
-
-    elif args.model_name == "ResD_unet":
-        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model_name == "a_unet":
-        model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model_name == "a_unetv2":
-        model = A_UNetv2(in_channels=3, n_classes=4, p=0)
-    elif args.model_name == "m_unet":
-        model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model_name == "msaf_unet":
-        model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model_name == "msaf_unetv2":
-        model = MSAF_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model_name == "aicunet":
-        model = AICUNet(in_channels=3, n_classes=4, p=0)
+    # unet系列
+    elif args.model == "unet":   
+        model = UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "ResD_unet":
+        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "a_unet":
+        model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "m_unet":
+        model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)    
+    elif args.model == "rdam_unet":
+        model = RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "aicunet":
+        model = AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p)
+    elif args.model == "vm_unet":
+        model = VMUNet(input_channels=3, num_classes=4)
+    
+    # 其他模型        
+    elif args.model == "Segnet":
+        model = SegNet(n_classes=4, dropout_p=args.dropout_p)
+    elif args.model == "pspnet":
+        model = PSPNet(classes=4, dropout=args.dropout_p, pretrained=False)
+    elif args.model == "deeplabv3_resnet50":
+        model = deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4)
+    elif args.model == "deeplabv3_resnet101":
+        model = deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4)
+    elif args.model == "deeplabv3_mobilenetv3_large":
+        model = deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
     else:
-        raise ValueError(f"model name error")
+        raise ValueError(f"Invalid model name: {args.model}")
     
     
     # 加载模型权重

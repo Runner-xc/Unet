@@ -493,34 +493,8 @@ class SE_Up(nn.Module):
         x = self.conv(x)
         x = self.se(x)
         return x
-"""-------------------------------------------------Attention------------------------------------------------"""
-### SE_Block
-#全局平均池化+1*1卷积核+ReLu+1*1卷积核+Sigmoid
-class SE_Block(nn.Module):
-    def __init__(self, inchannel, ratio=16):
-        super(SE_Block, self).__init__()
-        # 全局平均池化(Fsq操作)
-        self.gap = nn.AdaptiveAvgPool2d((1, 1))
-        # 两个全连接层(Fex操作)
-        self.fc = nn.Sequential(
-            nn.Linear(inchannel, inchannel // ratio, bias=False),  # 从 c -> c/r
-            nn.ReLU(),
-            nn.Linear(inchannel // ratio, inchannel, bias=False),  # 从 c/r -> c
-            nn.Sigmoid()
-        )
- 
-    def forward(self, x):
-            # 读取批数据图片数量及通道数
-            b, c, h, w = x.size()
-            # Fsq操作：经池化后输出b*c的矩阵
-            y = self.gap(x).view(b, c)
-            # Fex操作：经全连接层输出（b，c，1，1）矩阵
-            y = self.fc(y).view(b, c, 1, 1)
-            # Fscale操作：将得到的权重乘以原来的特征图x
-            return x * y.expand_as(x)
     
-### CAB
-# 直通估计器（Straight-Through Estimator），用于二值激活函数
+"""---------------------------------------------Pyramid Pooling Module----------------------------------------------------"""
 class STEFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
@@ -539,8 +513,7 @@ class StraightThroughEstimator(nn.Module):
 
     def forward(self, x):
         return STEFunction.apply(x)
-
-
+    
 # 因果图块（Causality Map Block）
 class CausalityMapBlock(nn.Module):
     def __init__(self):
@@ -623,8 +596,6 @@ class CausalityFactorsExtractor(nn.Module):
 
         # print(f"multiplicative_factors: min {torch.min(multiplicative_factors)}, max {torch.max(multiplicative_factors)}, mean {torch.mean(multiplicative_factors)}")
         return torch.einsum('bkmn,bk->bkmn', x, multiplicative_factors)
-    
-"""---------------------------------------------Pyramid Pooling Module----------------------------------------------------"""
 class PSPModule(nn.Module):
     def __init__(self, in_channels: int, bin_size_list: list = [1, 2, 4, 8]):
         super(PSPModule, self).__init__()
@@ -660,92 +631,66 @@ class PSPModule(nn.Module):
         final = torch.cat([inputs, final], dim=1)  # 将各特征图在通道维上拼接起来
         return final
 
-class ACPN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
-    def __init__(self, in_channels, mid_channels=None):
-        super(ACPN, self).__init__()
-        if mid_channels is None:
-            mid_channels = in_channels // 2 
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
-        # 3×3
-        self.cbrp1 = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, padding=1, stride=1))      
-        # 5×5
-        self.cbrp2 = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, stride=1),
-            nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, in_channels, kernel_size=3, padding=1, stride=1),
-            nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=5, padding=2, stride=1))       
-        # 7×7
-        self.cbrp3 = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, stride=1),
-            nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1, stride=1),
-            nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, in_channels, kernel_size=3, padding=1, stride=1),
-            nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=7, padding=3, stride=1))
-
-        # 新增小目标检测层
-        self.cbrp4 = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=1, padding=0, stride=1),
-            nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, in_channels, kernel_size=1, padding=0, stride=1),
-            nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=1, padding=0, stride=1)
-        )
-
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.sgm = nn.Sigmoid()
-        self.final_conv = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0),
-            nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True))
+class _DenseASPPConv(nn.Sequential):
+    def __init__(self, in_channels, inter_channels, out_channels, atrous_rate,
+                 drop_rate=0.1, norm_layer=nn.BatchNorm2d, norm_kwargs=None):
+        super(_DenseASPPConv, self).__init__()
+        self.add_module('conv1', nn.Conv2d(in_channels, inter_channels, 1)),
+        self.add_module('bn1', norm_layer(inter_channels, **({} if norm_kwargs is None else norm_kwargs))),
+        self.add_module('relu1', nn.ReLU(True)),
+        self.add_module('conv2', nn.Conv2d(inter_channels, out_channels, 3, dilation=atrous_rate, padding=atrous_rate)),
+        self.add_module('bn2', norm_layer(out_channels, **({} if norm_kwargs is None else norm_kwargs))),
+        self.add_module('relu2', nn.ReLU(True)),
+        self.drop_rate = drop_rate
 
     def forward(self, x):
-        inputs = x
-        b, c, h, w = inputs.size()
-        c1 = self.maxpool(inputs)
-        s1 = self.avg_pool(c1).view(b, c)
+        features = super(_DenseASPPConv, self).forward(x)
+        if self.drop_rate > 0:
+            features = F.dropout(features, p=self.drop_rate, training=self.training)
+        return features
+class DenseASPPBlock(nn.Module):
+    def __init__(self, in_channels, inter_channels1, inter_channels2,
+                 norm_layer=nn.BatchNorm2d, norm_kwargs=None):
+        super(DenseASPPBlock, self).__init__()
+        self.aspp_3 = _DenseASPPConv(in_channels, inter_channels1, inter_channels2, 3, 0.1,
+                                     norm_layer, norm_kwargs)
+        self.aspp_6 = _DenseASPPConv(in_channels + inter_channels2 * 1, inter_channels1, inter_channels2, 6, 0.1,
+                                     norm_layer, norm_kwargs)
+        self.aspp_12 = _DenseASPPConv(in_channels + inter_channels2 * 2, inter_channels1, inter_channels2, 12, 0.1,
+                                      norm_layer, norm_kwargs)
+        self.aspp_18 = _DenseASPPConv(in_channels + inter_channels2 * 3, inter_channels1, inter_channels2, 18, 0.1,
+                                      norm_layer, norm_kwargs)
+        self.aspp_24 = _DenseASPPConv(in_channels + inter_channels2 * 4, inter_channels1, inter_channels2, 24, 0.1,
+                                      norm_layer, norm_kwargs)
+        self.cbr1 = nn.Sequential(
+            nn.Conv2d(in_channels + inter_channels2 * 5, 256, 1, 1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True)
+        )
 
-        c2 = self.cbrp1(inputs)
-        s2 = self.avg_pool(c2).view(b, c)
+    def forward(self, x):
+        aspp3 = self.aspp_3(x)
+        x = torch.cat([aspp3, x], dim=1)
 
-        c3 = self.cbrp2(inputs)
-        s3 = self.avg_pool(c3).view(b, c)
+        aspp6 = self.aspp_6(x)
+        x = torch.cat([aspp6, x], dim=1)
 
-        c4 = self.cbrp3(inputs)
-        s4 = self.avg_pool(c4).view(b, c)
+        aspp12 = self.aspp_12(x)
+        x = torch.cat([aspp12, x], dim=1)
 
-        c5 = self.cbrp4(inputs)  # 小目标检测层
-        s5 = self.avg_pool(c5).view(b, c)
+        aspp18 = self.aspp_18(x)
+        x = torch.cat([aspp18, x], dim=1)
 
-        out = torch.stack([s1, s2, s3, s4, s5], dim=-1)
-        weights = self.sgm(out)
+        aspp24 = self.aspp_24(x)
+        x = torch.cat([aspp24, x], dim=1)
 
-        # 将权重作用到各个卷积结果上并相加
-        c1_weighted = c1 * weights[:, :, 0].unsqueeze(-1).unsqueeze(-1)
-        c2_weighted = c2 * weights[:, :, 1].unsqueeze(-1).unsqueeze(-1)
-        c3_weighted = c3 * weights[:, :, 2].unsqueeze(-1).unsqueeze(-1)
-        c4_weighted = c4 * weights[:, :, 3].unsqueeze(-1).unsqueeze(-1)
-
-        output = c1_weighted + c2_weighted + c3_weighted + c4_weighted
-        output = self.final_conv(output)
-        return output
+        x = self.cbr1(x)
+        return x
     
-class ACPNv2(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
+"""---------------------------------------------AMSFN----------------------------------------------------""" 
+class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
     def __init__(self, in_channels, mid_channels=None):
-        super(ACPNv2, self).__init__()
+        super(AMSFN, self).__init__()
         if mid_channels is None:
             mid_channels = in_channels // 2 
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
@@ -818,86 +763,10 @@ class ACPNv2(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
         output = self.final_conv(output)
         return output
 
-class DynamicAttention(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.query = nn.Conv2d(in_channels, in_channels//8, 1)
-        self.key = nn.Conv2d(in_channels, in_channels//8, 1)
-        self.value = nn.Conv2d(in_channels, in_channels, 1)
-        self.gamma = nn.Parameter(torch.zeros(1))
-
-    def forward(self, x):
-        batch, C, H, W = x.size()
-        Q = self.query(x).view(batch, -1, H*W).permute(0,2,1)  # [B, N, C']
-        K = self.key(x).view(batch, -1, H*W)                   # [B, C', N]
-        V = self.value(x).view(batch, -1, H*W)                 # [B, C, N]
-        
-        attention = torch.softmax(torch.bmm(Q, K) / (C**0.5), dim=-1)
-        out = torch.bmm(V, attention.permute(0,2,1)).view(batch, C, H, W)
-        return self.gamma * out + x
-
-class _DenseASPPConv(nn.Sequential):
-    def __init__(self, in_channels, inter_channels, out_channels, atrous_rate,
-                 drop_rate=0.1, norm_layer=nn.BatchNorm2d, norm_kwargs=None):
-        super(_DenseASPPConv, self).__init__()
-        self.add_module('conv1', nn.Conv2d(in_channels, inter_channels, 1)),
-        self.add_module('bn1', norm_layer(inter_channels, **({} if norm_kwargs is None else norm_kwargs))),
-        self.add_module('relu1', nn.ReLU(True)),
-        self.add_module('conv2', nn.Conv2d(inter_channels, out_channels, 3, dilation=atrous_rate, padding=atrous_rate)),
-        self.add_module('bn2', norm_layer(out_channels, **({} if norm_kwargs is None else norm_kwargs))),
-        self.add_module('relu2', nn.ReLU(True)),
-        self.drop_rate = drop_rate
-
-    def forward(self, x):
-        features = super(_DenseASPPConv, self).forward(x)
-        if self.drop_rate > 0:
-            features = F.dropout(features, p=self.drop_rate, training=self.training)
-        return features
-
-
-class DenseASPPBlock(nn.Module):
-    def __init__(self, in_channels, inter_channels1, inter_channels2,
-                 norm_layer=nn.BatchNorm2d, norm_kwargs=None):
-        super(DenseASPPBlock, self).__init__()
-        self.aspp_3 = _DenseASPPConv(in_channels, inter_channels1, inter_channels2, 3, 0.1,
-                                     norm_layer, norm_kwargs)
-        self.aspp_6 = _DenseASPPConv(in_channels + inter_channels2 * 1, inter_channels1, inter_channels2, 6, 0.1,
-                                     norm_layer, norm_kwargs)
-        self.aspp_12 = _DenseASPPConv(in_channels + inter_channels2 * 2, inter_channels1, inter_channels2, 12, 0.1,
-                                      norm_layer, norm_kwargs)
-        self.aspp_18 = _DenseASPPConv(in_channels + inter_channels2 * 3, inter_channels1, inter_channels2, 18, 0.1,
-                                      norm_layer, norm_kwargs)
-        self.aspp_24 = _DenseASPPConv(in_channels + inter_channels2 * 4, inter_channels1, inter_channels2, 24, 0.1,
-                                      norm_layer, norm_kwargs)
-        self.cbr1 = nn.Sequential(
-            nn.Conv2d(in_channels + inter_channels2 * 5, 256, 1, 1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, x):
-        aspp3 = self.aspp_3(x)
-        x = torch.cat([aspp3, x], dim=1)
-
-        aspp6 = self.aspp_6(x)
-        x = torch.cat([aspp6, x], dim=1)
-
-        aspp12 = self.aspp_12(x)
-        x = torch.cat([aspp12, x], dim=1)
-
-        aspp18 = self.aspp_18(x)
-        x = torch.cat([aspp18, x], dim=1)
-
-        aspp24 = self.aspp_24(x)
-        x = torch.cat([aspp24, x], dim=1)
-
-        x = self.cbr1(x)
-        return x
-
 if __name__ == '__main__':
     from attention import *
     x = torch.randn(16, 3, 256, 256)
-    model = ACPNv2(3, 4)
+    model = AMSFN(3, 4)
     out = model(x)
     print(out.shape, "\n",
           model)

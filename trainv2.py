@@ -14,9 +14,9 @@ from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
-from model.a_unet import A_UNet, A_UNetv2
+from model.a_unet import A_UNet
 from model.m_unet import M_UNet
-from model.msaf_unet import MSAF_UNet, MSAF_UNetv2
+from model.rdam_unet import RDAM_UNet
 from model.vm_unet import VMUNet
 from tabulate import tabulate
 from utils.train_and_eval import *
@@ -71,10 +71,8 @@ class TrainingComponents:
             "unet": UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "ResD_unet": ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "a_unet": A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "a_unetv2": A_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "m_unet": M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "msaf_unet": MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "msaf_unetv2": MSAF_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "rdam_unet": RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "aicunet": AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet": VMUNet(input_channels=3, num_classes=4),
             "Segnet": SegNet(n_classes=4, dropout_p=args.dropout_p),

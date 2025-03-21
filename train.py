@@ -14,9 +14,10 @@ from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
-from model.a_unet import A_UNet, A_UNetv2
+from model.a_unet import A_UNet
 from model.m_unet import M_UNet
-from model.msaf_unet import MSAF_UNet, MSAF_UNetv2
+from model.rdam_unet import RDAM_UNet
+from model.vm_unet import VMUNet
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
@@ -157,12 +158,11 @@ def main(args):
                                 pin_memory=True)
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
     # 加载模型
-    assert args.model in ["u2net_full", "u2net_lite", "unet", "aicunet", "ResD_unet", "Segnet", "deeplabv3_resnet50", "deeplabv3_resnet101", "pspnet", "msaf_unet", "msaf_unetv2", "a_unet", "a_unetv2", "m_unet"], \
-        f"wrong model: {args.model}"
     if args.model =="u2net_full":
         model = u2net_full_config()
     elif args.model =="u2net_lite":
         model = u2net_lite_config()
+    
     # unet系列
     elif args.model == "unet":   
         model = UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
@@ -170,16 +170,15 @@ def main(args):
         model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
     elif args.model == "a_unet":
         model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
-    elif args.model == "a_unetv2":
-        model = A_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
     elif args.model == "m_unet":
         model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)    
-    elif args.model == "msaf_unet":
-        model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
-    elif args.model == "msaf_unetv2":
-        model = MSAF_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
+    elif args.model == "rdam_unet":
+        model = RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p)
     elif args.model == "aicunet":
         model = AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p)
+    elif args.model == "vm_unet":
+        model = VMUNet(input_channels=3, num_classes=4)
+    
     # 其他模型        
     elif args.model == "Segnet":
         model = SegNet(n_classes=4, dropout_p=args.dropout_p)

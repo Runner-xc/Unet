@@ -53,7 +53,6 @@ class SpatialAttention(nn.Module):
         floor = math.floor(t)
         C_im = floor + floor % 2
         return C_im
-
     
     def get_im_subim_channels(self, C_im, M): # 根据Channel_Attention_Map得到重要通道以及不重要的通道
         _, topk = torch.topk(M, dim=1, k=C_im)
@@ -107,6 +106,7 @@ class Res_HAM(nn.Module):
         out = self.relu(final_refined_feature + residual)
         return out
     
+""""----------------------------------------------------EMA-----------------------------------------------------"""      
 class EMA(nn.Module):
     def __init__(self, channels, factor=32):
         super(EMA, self).__init__()
@@ -143,10 +143,10 @@ class EMA(nn.Module):
         weights = (torch.matmul(x11, x22) + torch.matmul(x21, x12)).reshape(b * self.group, 1, h, w)
         return (group_x * weights.sigmoid()).reshape(b, c, h, w)
     
-""""----------------------------------------------------EMAF-----------------------------------------------------"""
-class EMAF(nn.Module):
+""""----------------------------------------------------MADM-----------------------------------------------------"""
+class MADM(nn.Module):
     def __init__(self, channels, factor=32):
-        super(EMAF, self).__init__()
+        super(MADM, self).__init__()
         self.group = factor
         assert channels // self.group > 0
         self.softmax = nn.Softmax(dim=1)
@@ -187,13 +187,55 @@ class EMAF(nn.Module):
         y = self.fc(y)
 
         weights = x + y
-
         return (group_x * weights.sigmoid()).reshape(b, c, h, w)
+    
+""""----------------------------------------------------SE-----------------------------------------------------"""    
+class SE_Block(nn.Module):
+    def __init__(self, inchannel, ratio=16):
+        super(SE_Block, self).__init__()
+        # 全局平均池化(Fsq操作)
+        self.gap = nn.AdaptiveAvgPool2d((1, 1))
+        # 两个全连接层(Fex操作)
+        self.fc = nn.Sequential(
+            nn.Linear(inchannel, inchannel // ratio, bias=False),  # 从 c -> c/r
+            nn.ReLU(),
+            nn.Linear(inchannel // ratio, inchannel, bias=False),  # 从 c/r -> c
+            nn.Sigmoid()
+        )
+ 
+    def forward(self, x):
+            # 读取批数据图片数量及通道数
+            b, c, h, w = x.size()
+            # Fsq操作：经池化后输出b*c的矩阵
+            y = self.gap(x).view(b, c)
+            # Fex操作：经全连接层输出（b，c，1，1）矩阵
+            y = self.fc(y).view(b, c, 1, 1)
+            # Fscale操作：将得到的权重乘以原来的特征图x
+            return x * y.expand_as(x)
+    
+""""----------------------------------------------------DAtt-----------------------------------------------------"""  
+class DynamicAttention(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.query = nn.Conv2d(in_channels, in_channels//8, 1)
+        self.key = nn.Conv2d(in_channels, in_channels//8, 1)
+        self.value = nn.Conv2d(in_channels, in_channels, 1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        batch, C, H, W = x.size()
+        Q = self.query(x).view(batch, -1, H*W).permute(0,2,1)  # [B, N, C']
+        K = self.key(x).view(batch, -1, H*W)                   # [B, C', N]
+        V = self.value(x).view(batch, -1, H*W)                 # [B, C, N]
+        
+        attention = torch.softmax(torch.bmm(Q, K) / (C**0.5), dim=-1)
+        out = torch.bmm(V, attention.permute(0,2,1)).view(batch, C, H, W)
+        return self.gamma * out + x
     
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    ema = EMAF(32).to(device)
+    ema = MADM(32).to(device)
     input_data = torch.rand(1, 32, 256, 256).to(device)
     output_data = ema(input_data)
 

@@ -1,13 +1,12 @@
 datasets/
-SEM_DATA/
 results/
 cam_img/
 predict/
+jupyter/
 
 *.onnx
 *.jpg
 *.png
 *.jpeg
-!u2net.png
 *.tif
 **/__pycache__
