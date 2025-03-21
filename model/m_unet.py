@@ -32,7 +32,7 @@ class M_UNet(nn.Module):
         self.down1 = Down(base_channels, base_channels*2)
         self.msaf2 = EMAF(base_channels*2)
         self.down2 = Down(base_channels*2, base_channels*4)
-        self.msaf3 = EMAF(base_channels*4)      
+        self.msaf3 = EMApuF(base_channels*4)      
         self.down3 = Down(base_channels*4, base_channels*8)
         self.msaf4 = EMAF(base_channels*8)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
