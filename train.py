@@ -33,6 +33,7 @@ from typing import Union, List
 from utils.run_tensorboard import run_tensorboard
 from model.Segnet import SegNet
 from torchinfo import summary
+import swanlab
 
 class SODPresetTrain:
     def __init__(self, base_size: Union[int, List[int]], crop_size: int,
@@ -294,6 +295,20 @@ def main(args):
         else:
             log_path = f'{save_logs_path}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}'
             writer = SummaryWriter(log_path)
+        
+        # 转换参数为字典并过滤需要记录的参数
+        config = vars(args)
+        excluded_params = ['data_path', 'data_root_path', 'save_scores_path', 
+                         'save_weight_path', 'log_path', 'modification_path',
+                         'device', 'resume', 'save_flag', 'split_flag', 'change_params']
+        config = {k: v for k, v in config.items() if k not in excluded_params}
+        
+        # 初始化SwanLab（整个训练过程只初始化一次）
+        swanlab.init(
+            experiment_name=f"{args.model}-{args.loss_fn}",
+            config=config,
+            logdir=log_path  # 与TensorBoard共享日志目录
+        )
     
     """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
     # 记录修改后的参数
@@ -351,7 +366,7 @@ def main(args):
         # 记录时间
         start_time = time.time()
         # 训练
-        train_loss, T_OM_loss, T_OP_loss, T_IOP_loss, T_Metric_list = train_one_epoch(model, 
+        T_OM_loss, T_OP_loss, T_IOP_loss, train_loss, T_Metric_list = train_one_epoch(model, 
                                                                                     optimizer, 
                                                                                     epoch, 
                                                                                     train_dataloader, 
@@ -373,7 +388,6 @@ def main(args):
         train_loss_list = [train_OM_loss, train_OP_loss, train_IOP_loss, train_mean_loss]
         # 评价指标 metrics = [recall, precision, dice, f1_score]
         train_metrics               ={}
-        train_metrics[epoch]        = epoch
         train_metrics["Loss"]       = train_loss_list
         train_metrics["Recall"]     = T_Metric_list[0]
         train_metrics["Precision"]  = T_Metric_list[1]
@@ -401,7 +415,7 @@ def main(args):
             # 记录验证开始时间
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
-            mean_loss,OM_loss,OP_loss,IOP_loss, Metric_list = evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
+            OM_loss,OP_loss,IOP_loss, mean_loss, Metric_list = evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
 
             # 求平均
             val_OM_loss     = OM_loss / len(val_dataloader)
@@ -415,7 +429,6 @@ def main(args):
 
             # 评价指标 metrics = [recall, precision, dice, f1_score]
             val_metrics                 ={}
-            val_metrics[epoch]          = epoch
             val_metrics["Loss"]         = val_loss_list
             val_metrics["Recall"]       = Metric_list[0]
             val_metrics["Precision"]    = Metric_list[1]
@@ -439,7 +452,39 @@ def main(args):
             # 记录日志
             tb = args.tb
             if tb:
-                writing_logs(writer, train_metrics, val_metrics, epoch)               
+                writing_logs(writer, train_metrics, val_metrics, epoch) 
+                # 新增SwanLab日志记录
+                swanlab.log({
+                    # 训练指标
+                    "train/loss": train_mean_loss,
+                    "train/OM_loss": train_OM_loss,
+                    "train/OP_loss": train_OP_loss,
+                    "train/IOP_loss": train_IOP_loss,
+                    "train/Recall": T_Metric_list[0][-1],  # 取均值
+                    "train/Precision": T_Metric_list[1][-1],
+                    "train/Dice": T_Metric_list[2][-1],
+                    "train/F1": T_Metric_list[3][-1],
+                    "train/mIoU": T_Metric_list[4][-1],
+                    "train/Accuracy": T_Metric_list[5][-1],
+                    
+                    # 验证指标
+                    "val/loss": val_mean_loss,
+                    "val/OM_loss": val_OM_loss,
+                    "val/OP_loss": val_OP_loss,
+                    "val/IOP_loss": val_IOP_loss,
+                    "val/Recall": Metric_list[0][-1],
+                    "val/Precision": Metric_list[1][-1],
+                    "val/Dice": Metric_list[2][-1],
+                    "val/F1": Metric_list[3][-1],
+                    "val/mIoU": Metric_list[4][-1],
+                    "val/Accuracy": Metric_list[5][-1],
+                    
+                    # 学习率
+                    "learning_rate": current_lr,
+                    
+                    # 时间指标
+                    "time/epoch_time": train_cost_time + val_cost_time
+                }, step=epoch)              
                 """-------------------------TXT--------------------------------------------------------"""        
                 writer.add_text('val/Metrics', 
                                 f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
