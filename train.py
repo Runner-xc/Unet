@@ -1,6 +1,6 @@
 import torch
 import datetime
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from utils.my_data import SEM_DATA
 from utils import data_split
 from utils.writing_logs import writing_logs
@@ -36,25 +36,106 @@ from model.Segnet import SegNet
 from torchinfo import summary
 import swanlab
 
-# ---------------------------- Constants and Presets ----------------------------
+class SODPresetTrain:
+    def __init__(self, base_size: Union[int, List[int]], crop_size: int,
+                 hflip_prob=0.5, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        self.transforms = T.Compose([
+            T.ToTensor(),
+            # T.Resize(base_size),
+            # T.RandomCrop(crop_size),
+            # T.RandomHorizontalFlip(hflip_prob),
+            T.Normalize(mean=mean, std=std)
+        ])
+
+    def __call__(self, img, target):
+        data = self.transforms(img, target)
+        return data
+
+class SODPresetEval:
+    def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        self.transforms = T.Compose([
+            T.ToTensor(),
+            # T.Resize(base_size),
+            T.Normalize(mean=mean, std=std),
+        ])
+
+    def __call__(self, img, target):
+        data = self.transforms(img, target)
+        return data
+    
+
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-class ConfigPreset:
-    """数据预处理配置预设"""
-    @staticmethod
-    def train_preset(base_size, crop_size=256, hflip_prob=0.5):
-        return T.Compose([
-            T.ToTensor(),
-            T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-        ])
+detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
 
-    @staticmethod
-    def eval_preset(base_size):
-        return T.Compose([
-            T.ToTensor(),
-            T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-        ])
+def main(args):
+    """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
+    # 将args转换为字典
+    params = vars(args)
+
+    # 映射参数名称到参数
+    param_map = {
+        'lr'            : '1. lr',
+        'wd'            : '2. wd',
+        'l1_lambda'     : '3. l1_lambda',
+        'l2_lambda'     : '4. l2_lambda',
+        'elnloss'       : '5. elnloss',
+        'dropout_p'     : '6. dropout_p',
+        'model'         : '7. model',
+        'loss_fn'       : '8. loss_fn',
+        'optimizer'     : '9. optimizer',
+        'scheduler'     : '10. scheduler',
+        'Tmax'          : '11. Tmax',
+        'eta_min'       : '12. eta_min',
+        'save_flag'     : '13. save_flag',
+        'batch_size'    : '14. batch_size',
+        'num_small_data': '15. num_small_data',
+        'eval_interval' : '16. eval_interval',
+        'split_flag'    : '17. split_flag',
+        'resume'        : '18. resume'
+    }
+
+    # 筛选需要打印的参数
+    printed_params = list(param_map.keys())
+    params_dict = {}
+    params_dict['Parameter'] = [param_map[p] for p in printed_params]
+    params_dict['Value'] = [str(params[p]) for p in printed_params if p in params]
+
+    # 打印参数
+    params_header = ['Parameter', 'Value']
+    # print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
+    
+    """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
+    initial_time = time.time()
+    if args.change_params:    
+        x = input("是否需要修改配置参数：\n 0. 不修改, 继续。 \n\
+请输入需要修改的参数序号（int）： ")
+        
+        args = param_modification.param_modification(args, x)
+    save_modification_path = f"{args.modification_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
+
+    """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
+    # 定义设备
+    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    batch_size = args.batch_size
+
+    train_ratio = args.train_ratio
+    val_ratio = args.val_ratio   
+
+    # 划分数据集
+    if args.num_small_data is not None:
+        train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
+                                                                                                    num_small_data=args.num_small_data, 
+                                                                                                    # train_ratio=0.8, 
+                                                                                                    # val_ratio=0.1, 
+                            save_root_path=args.data_root_path,
+                            flag=args.split_flag) 
+    
+    else:
+        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
+                            save_root_path=args.data_root_path,   # 保存划分好的数据集路径
+                            flag=args.split_flag)
 
 # ---------------------------- Core Components ----------------------------
 class TrainingComponents:
@@ -311,280 +392,15 @@ class TrainingComponents:
     """打印参数"""
     print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
             
-            return LambdaLR(optimizer, lambda step: (
-                (step / warmup_steps) if step < warmup_steps
-                else (self.args.eta_min + (lr_initial - self.args.eta_min) * 
-                    (1 + math.cos(math.pi * (step - warmup_steps) / Tmax_steps)) / 2) / lr_initial
-            ), last_epoch=-1)
-            
-        elif self.args.scheduler == 'ReduceLROnPlateau':
-            return ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
-        else:
-            raise ValueError(f"Unsupported scheduler: {self.args.scheduler}")
-
-    def get_loss_fn(self):
-        """损失函数"""
-        loss_map = {
-            'CrossEntropyLoss': CrossEntropyLoss(),
-            'DiceLoss': diceloss(),
-            'FocalLoss': Focal_Loss(),
-            'WDiceLoss': WDiceLoss(),
-            'DWDLoss': DWDLoss(),
-            'IoULoss': IOULoss(),
-            'dice_hd': AdaptiveSegLoss(4)
-        }
-        return loss_map.get(self.args.loss_fn)
-
-    def get_writer(self, detailed_time_str):
-        # 日志保存路径
-        save_logs_path = f"{self.args.log_path}/{self.args.model}/L_{self.args.loss_fn}--S_{self.args.scheduler}"
-        
-        if not os.path.exists(save_logs_path):
-            os.makedirs(save_logs_path)
-        
-        if self.args.elnloss:
-            log_path = f'{save_logs_path}/optim_{self.args.optimizer}-lr_{self.args.lr}-l1_{self.args.l1_lambda}-l2_{self.args.l2_lambda}/{detailed_time_str}'
-            return SummaryWriter(log_path), log_path
-        else:
-            log_path = f'{save_logs_path}/optim_{self.args.optimizer}-lr_{self.args.lr}-wd_{self.args.wd}/{detailed_time_str}'
-            return SummaryWriter(log_path), log_path
-        
-
-# ---------------------------- Data Management ----------------------------
-class DataManager:
-    """数据管理"""
-    def __init__(self, args):
-        self.args = args
-        self.base_transform = ConfigPreset()
-
-    def load_datasets(self):
-        """加载数据集"""
-        if self.args.num_small_data:
-            train, val, test = data_split.small_data_split_to_train_val_test(
-                self.args.data_path, self.args.num_small_data, self.args.split_flag, self.args.train_ratio, self.args.val_ratio,self.args.data_root_path)
-        else:
-            train, val, test = data_split.data_split_to_train_val_test(
-                self.args.data_path, self.args.split_flag, self.args.train_ratio, self.args.val_ratio, 
-                self.args.data_root_path)
-
-        train_set = SEM_DATA(train, self.base_transform.train_preset(256))
-        val_set = SEM_DATA(val, self.base_transform.eval_preset(256))
-        return train_set, val_set
-
-    def get_dataloaders(self, train_set, val_set):
-        """获取数据加载器"""
-        num_workers = min(os.cpu_count(), self.args.batch_size if self.args.batch_size > 1 else 0, 8)
-        train_loader = DataLoader(train_set, self.args.batch_size, shuffle=True, 
-                                num_workers=num_workers, pin_memory=True)
-        val_loader = DataLoader(val_set, 8, shuffle=False, 
-                              num_workers=num_workers, pin_memory=True)
-        return train_loader, val_loader
-
-# ---------------------------- Training Logic ----------------------------
-class TrainingManager:
-    """训练流程管理"""
-    def __init__(self, args, model, optimizer, scheduler, loss_fn, device):
-        self.args = args
-        self.model = model
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-        self.loss_fn = loss_fn
-        self.device = device
-        self.metrics = Evaluate_Metric()
-        self.scaler = torch.amp.GradScaler() if args.amp else None
-     
-    def _train_epoch(self, epoch, dataloader):
-        """
-        训练单个epoch
-        """
-        start_time = time.time()
-        components_dict = {"model"      :self.model, 
-                           "optimizer"  :self.optimizer, 
-                           "epoch"      :epoch, 
-                           "dataloader" :dataloader, 
-                           "device"     :self.device, 
-                           "loss_fn"    :self.loss_fn, 
-                           "scaler"     :self.scaler,
-                           "metrics"    :self.metrics,
-                           "scheduler"  :self.scheduler,
-                           "elnloss"    :self.args.elnloss, 
-                           "l1_lambda"  :self.args.l1_lambda,
-                           "l2_lambda"  :self.args.l2_lambda}
-        # results = train_loss, T_OM_loss, T_OP_loss, T_IOP_loss, T_Metric_list
-        results = train_one_epochv2(components_dict)
-        loss = [x / len(dataloader) for x in results[:-1]]
-        self.train_mean_loss = loss[3]
-        results_dict = {"Loss"      : loss, 
-                        "Recall"    :results[-1][0], 
-                        "Precision" :results[-1][1], 
-                        "Dice"      :results[-1][2], 
-                        "F1_scores" :results[-1][3], 
-                        "mIoU"      :results[-1][4], 
-                        "Accuracy"  :results[-1][5]}
-        names = ["Loss", "Recall", "Precision", "Dice", "F1_scores", "mIoU", "Accuracy"]
-        train_metrics = {f"{name}" : results_dict[name] for name in names}
-
-        end_time = time.time()
-        train_cost_time = end_time - start_time
-        print(
-              f"train_OM_loss: {loss[0]:.3f}\n"
-              f"train_OP_loss: {loss[1]:.3f}\n"
-              f"train_IOP_loss: {loss[2]:.3f}\n"
-              f"train_mean_loss: {loss[3]:.3f}\n"
-              f"train_cost_time: {train_cost_time:.2f}s\n")
-        return train_metrics
-
-    def _validate_epoch(self,val_dataloader):
-        """
-        验证单个epoch
-        """
-        start_time = time.time()
-        # results = OM_loss,OP_loss,IOP_loss, mean_loss, Metric_list
-        results = evaluate(self.model, self.device, val_dataloader, self.loss_fn, self.metrics)
-        loss = [x / len(val_dataloader) for x in results[:-1]]
-        self.val_mean_loss = loss[3]
-        results_dict = {"Loss"      : loss, 
-                        "Recall"    : results[-1][0], 
-                        "Precision" : results[-1][1], 
-                        "Dice"      : results[-1][2], 
-                        "F1_scores" : results[-1][3], 
-                        "mIoU"      : results[-1][4], 
-                        "Accuracy"  : results[-1][5]}
-        names = ["Loss", "Recall", "Precision", "Dice", "F1_scores", "mIoU", "Accuracy"]
-        self.val_metrics = {f"{name}" : results_dict[name] for name in names}
-        # 获取当前学习率
-        current_lr = self.scheduler.get_last_lr()[0]
-        # 结束时间
-        end_time = time.time()
-        self.val_cost_time = end_time - start_time
-        print(
-            f"val_OM_loss: {loss[0]:.3f}\n"
-            f"val_OP_loss: {loss[1]:.3f}\n"
-            f"val_IOP_loss: {loss[2]:.3f}\n"
-            f"val_mean_loss: {loss[3]:.3f}\n"
-            f"val_cost_time: {self.val_cost_time:.2f}s\n")
-        print(f"Current learning rate: {current_lr}\n")
-        return self.val_metrics, loss[3]
-    
-    def run_logging(self,writer, train_metrics, val_metrics, epoch):
-        if self.args.tb:
-            writing_logs(writer, train_metrics, val_metrics, epoch)
-    
-    def save_metrics(self, args, epoch, end_epoch, best_epoch):
-        metrics_table_header    = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
-        metrics_table_left      = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
-        epoch_s                 = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
-        model_s                 = f"model : {args.model} \n"
-        lr_s                    = f"lr : {args.lr} \n"
-        wd_s                    = f"wd : {args.wd} \n"  #####
-        dropout_s               = f"dropout : {args.dropout_p} \n"
-        l1_lambda               = f"l1_lambda : {args.l1_lambda} \n"
-        l2_lambda               = f"l2_lambda : {args.l2_lambda} \n"
-        scheduler_s             = f"scheduler : {args.scheduler} \n"
-        loss_fn_s               = f"loss_fn : {args.loss_fn} \n"
-        best_epoch_s            = f"best_epoch : {best_epoch} \n"
-        time_s                  = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
-        cost_s                  = f"cost_time :{self.val_cost_time / 60:.2f}mins \n"
-        
-        metrics_dict    = {scores : self.val_metrics[scores] for scores in metrics_table_left}
-        metrics_table   = [[metric_name,
-                            metrics_dict[metric_name][-1],
-                            metrics_dict[metric_name][0],
-                            metrics_dict[metric_name][1],
-                            metrics_dict[metric_name][2]
-                        ]
-                            for metric_name in metrics_table_left
-                        ]
-        table_s         = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-        train_loss_s    = f"train_loss : {self.train_mean_loss:.3f}  🍎🍎🍎\n"
-        loss_s          = f"val_loss : {self.val_mean_loss:.3f}   🍎🍎🍎\n"
-
-        # 记录每个epoch对应的train_loss、lr以及验证集各指标
-        write_info      = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s
-        print(write_info)
-
-        # 保存结果
-        save_scores_path = f'{args.save_scores_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}'
-        if args.elnloss:
-            results_file = f"optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.txt"
-        else:
-            results_file = f"optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.txt"
-        file_path = os.path.join(save_scores_path, results_file)
-
-        if not os.path.exists(os.path.dirname(file_path)):
-            os.makedirs(os.path.dirname(file_path))
-        if args.save_flag:
-            with open(file_path, "a") as f:
-                f.write(write_info)
-    
-    def save_weights(self, args, epoch, best_mean_loss, best_epoch, model_info):
-        if args.save_flag:
-            # 保存best模型
-            if args.elnloss:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
-            else:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
-                
-            if not os.path.exists(save_weights_path):
-                os.makedirs(save_weights_path)
-
-            save_file = {"model"        : self.model.state_dict(),
-                        "optimizer"     : self.optimizer.state_dict(),
-                        "Metrics"       : self.metrics.state_dict(),
-                        "scheduler"     : self.scheduler.state_dict(),
-                        "best_mean_loss": best_mean_loss,
-                        "best_epoch"    : best_epoch,
-                        "step"          : self.scheduler.last_epoch,
-                        "model_info"    : model_info}
-            
-            # 保存当前最佳模型的权重
-            best_model_path = f"{save_weights_path}/model_best_ep_{best_epoch}.pth"
-            torch.save(save_file, best_model_path)
-            print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")
-            # 删除之前保存的所有包含"model_best"的文件
-            path_list = os.listdir(save_weights_path)
-            for i in path_list:
-                if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
-                    os.remove(os.path.join(save_weights_path, i))
-                    print(f"remove last best weight:{i}")
-                    
-            # only save latest 3 epoch weights
-            if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
-                os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
-                
-            if not os.path.exists(save_weights_path):
-                os.makedirs(save_weights_path)
-            torch.save(save_file, f"{save_weights_path}/model_ep_{epoch}.pth") 
-
-# ---------------------------- Main Function ----------------------------
-def main(args, detailed_time_str):
-    """主训练流程"""
-    # 初始化组件
-    components = TrainingComponents(args)
-    data_mgr = DataManager(args)
-    
-    # 加载数据
-    train_set, val_set = data_mgr.load_datasets()
-    train_loader, val_loader = data_mgr.get_dataloaders(train_set, val_set)
-    
-    # 初始化模型和训练组件
-    model = components.get_model()
-    model_info = str(summary(model, (1, 3, 256, 256)))
-
-    optimizer = components.get_optimizer(model)
-    scheduler = components.get_scheduler(optimizer, train_loader)
-    loss_fn = components.get_loss_fn()
-    if args.save_flag:
-        writer, log_path = components.get_writer(detailed_time_str)
-    
-    # 初始化训练管理器
-    trainer = TrainingManager(args, model, optimizer, scheduler, loss_fn, components.device)
-
+    """——————————————————————————————————————————————训练 验证——————————————————————————————————————————————"""
+    start_epoch = args.start_epoch
+    end_epoch = args.end_epoch
+  
     best_mean_loss, current_miou = float('inf'), 0.0
     best_epoch = 0 
     patience = 0 
     current_mean_loss = float('inf')
-    start_epoch = args.start_epoch
+
     """断点续传"""    
     if args.resume:
         torch.serialization.add_safe_globals([argparse.Namespace])
@@ -597,50 +413,252 @@ def main(args, detailed_time_str):
         start_epoch = checkpoint['best_epoch']
         best_epoch = checkpoint['best_epoch']
         print(f"Resume from epoch: {start_epoch}")
+    
+    """训练"""   
+    for epoch in range(start_epoch, end_epoch):
+        
+        print(f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈")
+        print(f"--Training-- 😀")
+        # 记录时间
+        start_time = time.time()
+        # 训练
+        T_OM_loss, T_OP_loss, T_IOP_loss, train_loss, T_Metric_list = train_one_epoch(model, 
+                                                                                    optimizer, 
+                                                                                    epoch, 
+                                                                                    train_dataloader, 
+                                                                                    device=device, 
+                                                                                    loss_fn=loss_fn, 
+                                                                                    scaler=scaler,
+                                                                                    Metric=Metrics,
+                                                                                    scheduler = scheduler,
+                                                                                    elnloss=args.elnloss,     #  Elastic Net正则化
+                                                                                    l1_lambda=args.l1_lambda,
+                                                                                    l2_lambda=args.l2_lambda) # loss_fn=loss_fn, 
+        
+        # 求平均
+        train_OM_loss   = T_OM_loss / len(train_dataloader)
+        train_OP_loss   = T_OP_loss / len(train_dataloader)
+        train_IOP_loss  = T_IOP_loss / len(train_dataloader)
+        train_mean_loss = train_loss / len(train_dataloader)
+        
+        train_loss_list = [train_OM_loss, train_OP_loss, train_IOP_loss, train_mean_loss]
+        # 评价指标 metrics = [recall, precision, dice, f1_score]
+        train_metrics               ={}
+        train_metrics["Loss"]       = train_loss_list
+        train_metrics["Recall"]     = T_Metric_list[0]
+        train_metrics["Precision"]  = T_Metric_list[1]
+        train_metrics["Dice"]       = T_Metric_list[2]
+        train_metrics["F1_scores"]  = T_Metric_list[3]
+        train_metrics["mIoU"]       = T_Metric_list[4]
+        train_metrics["Accuracy"]   = T_Metric_list[5]
+        
+        # 结束时间
+        end_time = time.time()
+        train_cost_time = end_time - start_time
 
-    # 训练循环
-    for epoch in range(start_epoch, args.end_epoch):
-        print(f"\n✈✈✈ Epoch {epoch+1}/{args.end_epoch} ✈✈✈")
+        # 打印
+        print(
+              f"train_OM_loss: {train_OM_loss:.3f}\n"
+              f"train_OP_loss: {train_OP_loss:.3f}\n"
+              f"train_IOP_loss: {train_IOP_loss:.3f}\n"
+              f"train_mean_loss: {train_mean_loss:.3f}\n"
+              f"train_cost_time: {train_cost_time:.2f}s\n")
         
-        # 训练阶段
-        train_metrics = trainer._train_epoch(epoch, train_loader)
-        
-        # 验证阶段
-        if epoch % args.eval_interval == 0 or epoch == args.end_epoch - 1:
-            val_metrics, val_mean_loss = trainer._validate_epoch(val_loader)
+
+        """验证"""
+        if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
+            print(f"--Validation-- 😀")
+            # 记录验证开始时间
+            start_time = time.time()
+            # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
+            OM_loss,OP_loss,IOP_loss, mean_loss, Metric_list = evaluate(model, device, val_dataloader, loss_fn, Metrics) # val_loss, recall, precision, f1_scores
+
+            # 求平均
+            val_OM_loss     = OM_loss / len(val_dataloader)
+            val_OP_loss     = OP_loss / len(val_dataloader)
+            val_IOP_loss    = IOP_loss / len(val_dataloader)
+            val_mean_loss   = mean_loss / len(val_dataloader)
+            val_loss_list   = [val_OM_loss, val_OP_loss, val_IOP_loss, val_mean_loss]
+            
+            # 获取当前学习率
+            current_lr = scheduler.get_last_lr()[0]  
+
+            # 评价指标 metrics = [recall, precision, dice, f1_score]
+            val_metrics                 ={}
+            val_metrics["Loss"]         = val_loss_list
+            val_metrics["Recall"]       = Metric_list[0]
+            val_metrics["Precision"]    = Metric_list[1]
+            val_metrics["Dice"]         = Metric_list[2]
+            val_metrics["F1_scores"]    = Metric_list[3]
+            val_metrics["mIoU"]         = Metric_list[4]
+            val_metrics["Accuracy"]     = Metric_list[5]
+            # 验证====结束时间
+            end_time = time.time()
+            val_cost_time = end_time - start_time
+
+            # 打印结果
+            print(
+                  f"val_OM_loss: {val_OM_loss:.3f}\n"
+                  f"val_OP_loss: {val_OP_loss:.3f}\n"
+                  f"val_IOP_loss: {val_IOP_loss:.3f}\n"
+                  f"val_mean_loss: {val_mean_loss:.3f}\n"
+                  f"val_cost_time: {val_cost_time:.2f}s\n")
+            print(f"Current learning rate: {current_lr}\n")
             
             # 记录日志
-            trainer.run_logging(writer, train_metrics, val_metrics, epoch)
-            if epoch == 5:
-                    run_tensorboard(log_path)
-
+            tb = args.tb
+            if tb:
+                writing_logs(writer, train_metrics, val_metrics, epoch) 
+                # 新增SwanLab日志记录
+                swanlab.log({
+                    # 训练指标
+                    "train/loss": train_mean_loss,
+                    "train/OM_loss": train_OM_loss,
+                    "train/OP_loss": train_OP_loss,
+                    "train/IOP_loss": train_IOP_loss,
+                    "train/Recall": T_Metric_list[0][-1],  # 取均值
+                    "train/Precision": T_Metric_list[1][-1],
+                    "train/Dice": T_Metric_list[2][-1],
+                    "train/F1": T_Metric_list[3][-1],
+                    "train/mIoU": T_Metric_list[4][-1],
+                    "train/Accuracy": T_Metric_list[5][-1],
+                    
+                    # 验证指标
+                    "val/loss": val_mean_loss,
+                    "val/OM_loss": val_OM_loss,
+                    "val/OP_loss": val_OP_loss,
+                    "val/IOP_loss": val_IOP_loss,
+                    "val/Recall": Metric_list[0][-1],
+                    "val/Precision": Metric_list[1][-1],
+                    "val/Dice": Metric_list[2][-1],
+                    "val/F1": Metric_list[3][-1],
+                    "val/mIoU": Metric_list[4][-1],
+                    "val/Accuracy": Metric_list[5][-1],
+                    
+                    # 学习率
+                    "learning_rate": current_lr,
+                    
+                    # 时间指标
+                    "time/epoch_time": train_cost_time + val_cost_time
+                }, step=epoch)              
+                """-------------------------TXT--------------------------------------------------------"""        
+                writer.add_text('val/Metrics', 
+                                f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
+                                f"model: {args.model}, loss_fn: {args.loss_fn}, scheduler: {args.scheduler}"
+                                )
+                if epoch == 5:
+                    run_tensorboard(log_path)               
+            
+            # 保存指标
             if best_mean_loss >= val_mean_loss:
                 best_mean_loss = val_mean_loss
                 best_epoch = epoch + 1
-                
-            # 保存指标
-            trainer.save_metrics(args, epoch, args.end_epoch, best_epoch)
-            # 保存权重
-            trainer.save_weights(args, epoch, best_mean_loss, best_epoch, model_info)
+            metrics_table_header    = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
+            metrics_table_left      = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
+            epoch_s                 = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
+            model_s                 = f"model : {args.model} \n"
+            lr_s                    = f"lr : {args.lr} \n"
+            wd_s                    = f"wd : {args.wd} \n"  #####
+            dropout_s               = f"dropout : {args.dropout_p} \n"
+            l1_lambda               = f"l1_lambda : {args.l1_lambda} \n"
+            l2_lambda               = f"l2_lambda : {args.l2_lambda} \n"
+            scheduler_s             = f"scheduler : {args.scheduler} \n"
+            loss_fn_s               = f"loss_fn : {args.loss_fn} \n"
+            best_epoch_s            = f"best_epoch : {best_epoch} \n"
+            time_s                  = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
+            cost_s                  = f"cost_time :{val_cost_time / 60:.2f}mins \n"
+            
+            metrics_dict    = {scores : val_metrics[scores] for scores in metrics_table_left}
+            metrics_table   = [[metric_name,
+                              metrics_dict[metric_name][-1],
+                              metrics_dict[metric_name][0],
+                              metrics_dict[metric_name][1],
+                              metrics_dict[metric_name][2]
+                            ]
+                             for metric_name in metrics_table_left
+                            ]
+            table_s         = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
+            train_loss_s    = f"train_loss : {train_mean_loss:.3f}  🍎🍎🍎\n"
+            loss_s          = f"val_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
 
+            # 记录每个epoch对应的train_loss、lr以及验证集各指标
+            write_info      = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s
+            print(write_info)
+
+            # 保存结果
+            save_scores_path = f'{args.save_scores_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}'
+            if args.elnloss:
+                results_file = f"optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.txt"
+            else:
+                results_file = f"optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.txt"
+            file_path = os.path.join(save_scores_path, results_file)
+
+            if not os.path.exists(os.path.dirname(file_path)):
+                os.makedirs(os.path.dirname(file_path))
+            if args.save_flag:
+                with open(file_path, "a") as f:
+                    f.write(write_info)                      
+       
+        if args.save_flag:
+            # 保存best模型
+            if args.elnloss:
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+            else:
+                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
+                
+            if not os.path.exists(save_weights_path):
+                os.makedirs(save_weights_path)
+
+            save_file = {"model"        : model.state_dict(),
+                        "optimizer"     : optimizer.state_dict(),
+                        "Metrics"       : Metrics.state_dict(),
+                        "scheduler"     : scheduler.state_dict(),
+                        "best_mean_loss": best_mean_loss,
+                        "best_epoch"    : best_epoch,
+                        "step"          : scheduler.last_epoch,
+                        "model_info"    : model_info}
+            
+            # 保存当前最佳模型的权重
+            best_model_path = f"{save_weights_path}/model_best_ep_{best_epoch}.pth"
+            torch.save(save_file, best_model_path)
+            print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")
+            # 删除之前保存的所有包含"model_best"的文件
+            path_list = os.listdir(save_weights_path)
+            for i in path_list:
+                if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
+                    os.remove(os.path.join(save_weights_path, i))
+                    print(f"remove last best weight:{i}")
+                            
+            current_miou = val_metrics["mIoU"][-1]
+
+            # only save latest 3 epoch weights
+            if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
+                os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
+                
+            if not os.path.exists(save_weights_path):
+                os.makedirs(save_weights_path)
+            torch.save(save_file, f"{save_weights_path}/model_ep_{epoch}.pth") 
+        
         # 记录验证loss是否出现上升       
         if val_mean_loss <= current_mean_loss:
             current_mean_loss = val_mean_loss 
             patience = 0   
         else:
-            patience += 1
-        # 早停检查
-        if patience >= 50:
-            print("Early stopping triggered!")
+            patience += 1 
+    
+        # 早停判断
+        if patience >= 50:    
+            print('恭喜你触发早停！！')
             break
 
-    # 清理资源
     writer.close()
-    print(f"Training completed in {time.time()-detailed_time_str:.2f} seconds")
-
-def parse_args():
-    """参数解析"""
-    parser = argparse.ArgumentParser(description="SEM图像分割训练脚本")
+    total_time = time.time() - initial_time
+    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    print("====training over. total time: {}".format(total_time_str))
+        
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
+    
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
                         default="/root/projects/WS-U2net/U-2-Net/datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
@@ -664,8 +682,8 @@ def parse_args():
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="rdam_unet", 
-                        help=" unet, ResD_unet, rdam_unet, a_unet, m_unet,\
+                        default="msaf_unetv2", 
+                        help=" unet, ResD_unet, msaf_unet, msaf_unetv2, a_unet, a_unetv2, m_unet, aicunet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--loss_fn',            type=str, 
@@ -691,8 +709,8 @@ def parse_args():
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
@@ -712,12 +730,6 @@ def parse_args():
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
-    return parser.parse_args()
 
-if __name__ == '__main__':
-    args = parse_args()
-    if args.change_params:
-        args = param_modification.param_modification(args)
-
-    detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
-    main(args, detailed_time_str)
+    args = parser.parse_args()
+    main(args)
