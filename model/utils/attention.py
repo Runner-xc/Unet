@@ -235,11 +235,7 @@ class DynamicAttention(nn.Module):
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-<<<<<<< HEAD
-    ema = MADM(32).to(device)
-=======
     ema = MDAM(32).to(device)
->>>>>>> 7d79757 (ud pred train)
     input_data = torch.rand(1, 32, 256, 256).to(device)
     output_data = ema(input_data)
 
