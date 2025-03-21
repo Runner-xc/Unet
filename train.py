@@ -137,46 +137,6 @@ def main(args):
                             save_root_path=args.data_root_path,   # 保存划分好的数据集路径
                             flag=args.split_flag)
 
-# ---------------------------- Core Components ----------------------------
-class TrainingComponents:
-    """训练组件"""
-    def __init__(self, args):
-        self.args = args
-        self.device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-        
-    def get_model(self):
-        """模型"""
-        model_map = {
-            "u2net_full": u2net_full_config(),
-            "u2net_lite": u2net_lite_config(),
-
-            "unet": UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "ResD_unet": ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "a_unet": A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "m_unet": M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "rdam_unet": RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-
-            "Segnet": SegNet(n_classes=4, dropout_p=args.dropout_p),
-            "pspnet": PSPNet(classes=4, dropout=args.dropout_p, pretrained=False),
-            "deeplabv3_resnet50": deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_resnet101": deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_mobilenetv3_large": deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
-        }
-        model = model_map.get(self.args.model)
-        if not model:
-            raise ValueError(f"Invalid model name: {self.args.model}")
-        kaiming_initial(model)
-        return model.to(self.device)
-
-    def get_optimizer(self, model):
-        """优化器"""
-        optim_map = {
-            'AdamW': lambda: AdamW(model.parameters(), self.args.lr, weight_decay=self.args.wd),
-            'SGD': lambda: SGD(model.parameters(), self.args.lr, momentum=0.9, weight_decay=self.args.wd),
-            'RMSprop': lambda: RMSprop(model.parameters(), self.args.lr, alpha=0.9, eps=1e-8, weight_decay=self.args.wd)
-        }
-        return optim_map.get(self.args.optimizer, optim_map['AdamW'])()
-
     train_ratio = args.train_ratio
     val_ratio = args.val_ratio   
 
