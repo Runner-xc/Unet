@@ -682,8 +682,8 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="msaf_unetv2", 
-                        help=" unet, ResD_unet, msaf_unet, msaf_unetv2, a_unet, a_unetv2, m_unet, aicunet\
+                        default="rdam_unet", 
+                        help=" unet, ResD_unet, rdam_unet, a_unet, m_unet, aicunet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--loss_fn',            type=str, 
