@@ -621,24 +621,24 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
-                        default="/root/projects/WS-U2net/U-2-Net/datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
+                        default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
                         help="path to csv dataset")
     
     parser.add_argument('--data_root_path',  type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/datasets/CSV")
+                        default="/root/projects/WS-UNet/UNet/datasets/CSV")
     
     # results
     parser.add_argument('--save_scores_path',   type=str, 
-                        default='/root/projects/WS-U2net/U-2-Net/results/save_scores')
+                        default='/root/projects/WS-UNet/UNet/results/save_scores')
     
     parser.add_argument('--save_weight_path',   type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/save_weights")
+                        default="/root/projects/WS-UNet/UNet/results/save_weights")
     
     parser.add_argument('--log_path',  type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/logs")
+                        default="/root/projects/WS-UNet/UNet/results/logs")
     
     parser.add_argument('--modification_path', type=str,
-                        default="/root/projects/WS-U2net/U-2-Net/results/modification_log")
+                        default="/root/projects/WS-UNet/UNet/results/modification_log")
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
@@ -669,8 +669,8 @@ if __name__ == '__main__':
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
