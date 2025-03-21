@@ -10,3 +10,5 @@ jupyter/
 *.jpeg
 *.tif
 **/__pycache__
+
+!images/
