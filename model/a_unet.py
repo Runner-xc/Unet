@@ -13,7 +13,7 @@ class OutConv(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return x
-
+ 
 class A_UNet(nn.Module):
     def __init__(self, in_channels,
                  n_classes,
