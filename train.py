@@ -69,7 +69,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
 
-def main(args):
+def main(args, aug_args):
     """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
     # 将args转换为字典
     params = vars(args)
@@ -133,26 +133,12 @@ def main(args):
                             flag=args.split_flag) 
     
     else:
-        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
+        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(aug_args, args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
                             save_root_path=args.data_root_path,   # 保存划分好的数据集路径
                             flag=args.split_flag)
 
     train_ratio = args.train_ratio
     val_ratio = args.val_ratio   
-
-    # 划分数据集
-    if args.num_small_data is not None:
-        train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
-                                                                                                    num_small_data=args.num_small_data, 
-                                                                                                    # train_ratio=0.8, 
-                                                                                                    # val_ratio=0.1, 
-                            save_root_path=args.data_root_path,
-                            flag=args.split_flag) 
-    
-    else:
-        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
-                            save_root_path=args.data_root_path,   # 保存划分好的数据集路径
-                            flag=args.split_flag)
 
     # 读取数据集
     train_datasets = SEM_DATA(train_datasets, 
@@ -321,9 +307,9 @@ def main(args):
         
         # 初始化SwanLab（整个训练过程只初始化一次）
         swanlab.init(
+            project="UNet",
             experiment_name=f"{args.model}-{args.loss_fn}",
             config=config,
-            logdir=log_path  # 与TensorBoard共享日志目录
         )
     
     """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
@@ -621,7 +607,7 @@ if __name__ == '__main__':
     
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
-                        default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/rock_sem_chged_256_a50_c80.csv", 
+                        default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/shale_256.csv", 
                         help="path to csv dataset")
     
     parser.add_argument('--data_root_path',  type=str,
@@ -669,8 +655,8 @@ if __name__ == '__main__':
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
     parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
     
@@ -691,5 +677,12 @@ if __name__ == '__main__':
     parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
 
-    args = parser.parse_args()
-    main(args)
+    main_args = parser.parse_args()
+
+    aug_data_parser = argparse.ArgumentParser(description="data augmentation")
+    aug_data_parser.add_argument("--root_path",    default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets",            type=str,       help="root path")
+    aug_data_parser.add_argument("--size",         default="256",                                                   type=str,       help="size of img and mask") 
+    aug_data_parser.add_argument("--aug_times",    default=60,                                                      type=int,       help="augmentation times")
+    aug_args = aug_data_parser.parse_args()
+
+    main(main_args, aug_args)

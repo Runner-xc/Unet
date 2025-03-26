@@ -10,29 +10,28 @@ from torch.utils.data import Dataset, DataLoader
 2. 读取数据集，返回张量
 """
 
-def save_sem_paths_to_csv(root_path, csv_path, csv_name) -> pd.DataFrame:
+def save_sem_paths_to_csv(root_path, csv_path, csv_name, size) -> pd.DataFrame:
     path_dict = {'img': [], 'mask': []}
-    
-    # 优化点：添加异常处理，确保目录存在
-    if not os.path.isdir(root_path):
-        raise ValueError(f"The root path '{root_path}' does not exist or is not a directory.")
     
     # 遍历root_path下的所有目录和文件
     for root, dirs, files in os.walk(root_path):
-        # 只在当前层级查找以'im'或'ma'开头的目录
-        dirs[:] = [d for d in dirs if d.startswith(('chged_images_256_a50_c80', 'chged_masks_256_a50_c80'))]
         for dir_name in dirs:
-            dir_path = os.path.join(root, dir_name)
-            # 根据目录名前缀分别处理'img'和'mask'目录
-            if dir_name.startswith('chged_im'):
-                for img_file in os.listdir(dir_path):
-                    img_path = os.path.join(dir_path, img_file)
-                    path_dict['img'].append(img_path)
-            elif dir_name.startswith('chged_ma'):
-                for mask_file in os.listdir(dir_path):
-                    mask_path = os.path.join(dir_path, mask_file)
-                    path_dict['mask'].append(mask_path)
-    
+            if dir_name.startswith('images'):
+                dir_path = os.path.join(root, dir_name)
+                print(f"当前目录名称：{dir_path}")
+                # 检查子目录名称是否包含指定的 size
+                if size in os.listdir(dir_path):
+                    for img_file in os.listdir(os.path.join(dir_path, size)):
+                        img_path = os.path.join(os.path.join(dir_path, size), img_file)
+                        path_dict['img'].append(img_path)
+            elif dir_name.startswith('masks'):
+                dir_path = os.path.join(root, dir_name)
+                print(f"当前目录名称：{dir_path}")
+                if size in os.listdir(dir_path):
+                    for mask_file in os.listdir(os.path.join(dir_path, size)):
+                        mask_path = os.path.join(os.path.join(dir_path, size), mask_file)
+                        path_dict['mask'].append(mask_path)
+        
     # 确保图片和mask对应                
     assert [path_dict['img'][i][:-4] == path_dict['mask'][i][:-4] for i in range(len(path_dict['img']))], "The image and mask paths do not match."
     
@@ -100,10 +99,11 @@ class SEM_DATA(Dataset):
           
 if __name__ == '__main__':
     #数据集路径
-    root_path = '/root/projects/WS-U2net/U-2-Net/datasets'
-    csv_path = '/root/projects/WS-U2net/U-2-Net/datasets/CSV'
-    csv_name = 'rock_sem_chged_256_a50_c80.csv'
-    save_sem_paths_to_csv(root_path, csv_path, csv_name)
+    root_path = '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets'
+    csv_path = '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV'
+    csv_name = 'shale_256.csv'
+    size = "256"
+    save_sem_paths_to_csv(root_path, csv_path, csv_name, size)
     # # 转换
     # img_compose = transforms.Compose([
     #     transforms.ToTensor(),
