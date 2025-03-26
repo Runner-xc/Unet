@@ -66,20 +66,20 @@ class TrainingComponents:
     def get_model(self):
         """模型"""
         model_map = {
-            "u2net_full": u2net_full_config(),
-            "u2net_lite": u2net_lite_config(),
-            "unet": UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "ResD_unet": ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "a_unet": A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "m_unet": M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "rdam_unet": RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "aicunet": AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
-            "vm_unet": VMUNet(input_channels=3, num_classes=4),
-            "Segnet": SegNet(n_classes=4, dropout_p=args.dropout_p),
-            "pspnet": PSPNet(classes=4, dropout=args.dropout_p, pretrained=False),
-            "deeplabv3_resnet50": deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_resnet101": deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_mobilenetv3_large": deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
+            "u2net_full"                    : u2net_full_config(),
+            "u2net_lite"                    : u2net_lite_config(),
+            "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
+            "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
+            "Segnet"                        : SegNet(n_classes=4, dropout_p=args.dropout_p),
+            "pspnet"                        : PSPNet(classes=4, dropout=args.dropout_p, pretrained=False),
+            "deeplabv3_resnet50"            : deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4),
+            "deeplabv3_resnet101"           : deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4),
+            "deeplabv3_mobilenetv3_large"   : deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
         }
         model = model_map.get(self.args.model)
         if not model:
@@ -97,7 +97,7 @@ class TrainingComponents:
         return optim_map.get(self.args.optimizer, optim_map['AdamW'])()
 
     def get_scheduler(self, optimizer, train_loader):
-        """学习率调度器工厂"""
+        """学习率调度器"""
         if self.args.scheduler == 'CosineAnnealingLR':
             num_batches = len(train_loader)
             warmup_steps = self.args.warmup_epochs * num_batches
@@ -116,7 +116,7 @@ class TrainingComponents:
             raise ValueError(f"Unsupported scheduler: {self.args.scheduler}")
 
     def get_loss_fn(self):
-        """损失函数工厂"""
+        """损失函数"""
         loss_map = {
             'CrossEntropyLoss': CrossEntropyLoss(),
             'DiceLoss': diceloss(),
@@ -145,7 +145,7 @@ class TrainingComponents:
 
 # ---------------------------- Data Management ----------------------------
 class DataManager:
-    """数据管理类"""
+    """数据管理"""
     def __init__(self, args):
         self.args = args
         self.base_transform = ConfigPreset()
@@ -175,7 +175,7 @@ class DataManager:
 
 # ---------------------------- Training Logic ----------------------------
 class TrainingManager:
-    """训练流程管理"""
+    """训练流程"""
     def __init__(self, args, model, optimizer, scheduler, loss_fn, device):
         self.args = args
         self.model = model
@@ -351,7 +351,7 @@ class TrainingManager:
 
 # ---------------------------- Main Function ----------------------------
 def main(args, detailed_time_str):
-    """主训练流程"""
+    """主训练"""
     # 初始化组件
     components = TrainingComponents(args)
     data_mgr = DataManager(args)

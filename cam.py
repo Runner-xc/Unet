@@ -9,9 +9,10 @@ from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
-from model.a_unet import A_UNet, A_UNetv2
+from model.a_unet import A_UNet
 from model.m_unet import M_UNet
-from model.msaf_unet import MSAF_UNet, MSAF_UNetv2
+from model.rdam_unet import RDAM_UNet
+from model.vm_unet import VMUNet
 import torch.nn.functional as F
 from PIL import Image
 import numpy as np
@@ -59,40 +60,25 @@ def main(args):
     checkpoint = torch.load(weights_path)
     state_dict = checkpoint['model']
 
-    # 创建模型实例
-    if args.model =="u2net_full":
-        model = u2net_full_config()
-    elif args.model =="u2net_lite":
-        model = u2net_lite_config()
-    # unet系列
-    elif args.model == "unet":   
-        model = UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "ResD_unet":
-        model = ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "a_unet":
-        model = A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "a_unetv2":
-        model = A_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "m_unet":
-        model = M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)    
-    elif args.model == "msaf_unet":
-        model = MSAF_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "msaf_unetv2":
-        model = MSAF_UNetv2(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=0)
-    elif args.model == "aicunet":
-        model = AICUNet(in_channels=3, n_classes=4, base_channels=32, p=0)
-    # 其他模型        
-    elif args.model == "Segnet":
-        model = SegNet(n_classes=4, dropout_p=0)
-    elif args.model == "pspnet":
-        model = PSPNet(classes=4, dropout=0, pretrained=False)
-    elif args.model == "deeplabv3_resnet50":
-        model = deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4)
-    elif args.model == "deeplabv3_resnet101":
-        model = deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4)
-    elif args.model == "deeplabv3_mobilenetv3_large":
-        model = deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
-    else:
+    # 加载模型
+    model_map = {
+            "u2net_full"                    : u2net_full_config(),
+            "u2net_lite"                    : u2net_lite_config(),
+            "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
+            "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
+            "Segnet"                        : SegNet(n_classes=4, dropout_p=args.dropout_p),
+            "pspnet"                        : PSPNet(classes=4, dropout=args.dropout_p, pretrained=False),
+            "deeplabv3_resnet50"            : deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4),
+            "deeplabv3_resnet101"           : deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4),
+            "deeplabv3_mobilenetv3_large"   : deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
+        }
+    model = model_map.get(args.model)
+    if not model:
         raise ValueError(f"Invalid model name: {args.model}")
 
     # 加载模型权重
