@@ -6,8 +6,9 @@
 """
 import pandas as pd
 import os
+from .data_augment import aug_data_processing
 
-def data_split_to_train_val_test(data_path, flag, train_ratio=0.8, val_ratio=0.1, save_root_path="./datasets"):
+def data_split_to_train_val_test(aug_args, data_path, flag, train_ratio=0.8, val_ratio=0.1, save_root_path="./datasets"):
     """
     data_path:   csv数据集文件路径
     train_ratio: 训练集比例  默认值：0.8
@@ -32,12 +33,21 @@ def data_split_to_train_val_test(data_path, flag, train_ratio=0.8, val_ratio=0.1
         val_data = df.iloc[train_len: train_len + val_len]
         test_data = df.iloc[train_len + val_len:]
 
-        # 如果提供了保存路径，则保存数据集
-        if save_root_path:
-            train_data.to_csv(f"{save_root_path}/train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
-            val_data.to_csv(f"{save_root_path}/val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
-            test_data.to_csv(f"{save_root_path}/test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
-            print("数据集划分完成！")
+        # 数据增强
+        train_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.size, aug_times=aug_args.aug_times, data_csv=train_data, datasets_name="train")
+        train_data = pd.DataFrame(train_path_dict)
+
+        val_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.size, aug_times=aug_args.aug_times, data_csv=val_data, datasets_name="val")
+        val_data = pd.DataFrame(val_path_dict)
+
+        test_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.size, aug_times=aug_args.aug_times, data_csv=test_data, datasets_name="test")
+        test_data = pd.DataFrame(test_path_dict)
+
+        # 保存数据集
+        train_data.to_csv(f"{save_root_path}/train_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+        val_data.to_csv(f"{save_root_path}/val_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+        test_data.to_csv(f"{save_root_path}/test_{os.path.basename(data_path).split('.')[0]}.csv", index=False)
+        print("数据集划分完成！")
 
     train_data_save_path = f"{save_root_path}/train_{os.path.basename(data_path).split('.')[0]}.csv"
     val_data_save_path = f"{save_root_path}/val_{os.path.basename(data_path).split('.')[0]}.csv"

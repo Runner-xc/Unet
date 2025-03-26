@@ -1,0 +1,298 @@
+import os
+import numpy as np
+from PIL import Image
+import cv2
+from tqdm import tqdm
+from scipy.ndimage import gaussian_filter
+import matplotlib.pyplot as plt
+import argparse
+
+class ShaleAugmentor:
+    def __init__(self, config=None):
+        # 默认配置
+        default_config = {
+            "morphology": {"kernel_size": 3, "p": 0.3},
+            "histogram_equalization": {"p": 0.05},  # 降低直方图均衡化的概率
+            "noise": {"gaussian_p": 0.3, "sp_p": 0.05},  # 降低噪声添加的概率和强度
+            "random_erase": {"p": 0.2, "erase_area_ratio": 0.01},  # 降低擦除的概率和区域大小
+            "sobel": {"threshhold" : 120},
+        }
+        # 深度合并配置
+        if config:
+            self.config = self._deep_update(default_config, config)
+        else:
+            self.config = default_config
+        
+        self.aug_methods = [
+            self.sobel,
+            self.random_rotate,
+            self.unsharp_mask,
+            self.morphology_aug,
+            self.histogram_equalization,
+            self.add_noise,      
+            self.random_erase,
+        ]
+
+    def __call__(self, image, mask):
+        """
+        执行数据增强流水线
+        """
+        # 转换为numpy数组以加速处理
+        image = np.array(image, dtype=np.uint8)
+        mask = np.array(mask, dtype=np.uint8)
+        
+        # 随机执行增强方法
+        for method in self.aug_methods:
+            if np.random.rand() < self._get_prob(method.__name__):
+                image, mask = method(image, mask)
+
+        # 确保图像数据类型为 uint8
+        image = image.astype(np.uint8)
+        mask = mask.astype(np.uint8)
+        
+        return Image.fromarray(image), Image.fromarray(mask)
+
+    def _deep_update(self, target, src):
+        """深度合并字典"""
+        for k, v in src.items():
+            if isinstance(v, dict):
+                node = target.setdefault(k, {})
+                self._deep_update(node, v)
+            else:
+                target[k] = v
+        return target
+    
+    def _get_prob(self, method_name):
+        """获取各方法的默认概率"""
+        prob_map = {
+            "morphology_aug": self.config["morphology"]["p"],
+            "histogram_equalization": self.config["histogram_equalization"]["p"],
+            "add_noise": self.config["noise"]["gaussian_p"],
+            "random_erase": self.config["random_erase"]["p"]
+        }
+        return prob_map.get(method_name, 0.5)
+    
+    def sobel(self, image, mask):
+        """Sobel边缘检测"""
+        if np.random.randn() < 0.5:
+            sobelx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)
+            gradmag = cv2.magnitude(sobelx, sobely)
+            edged_img = image.copy()
+            edged_img[gradmag > self.config["sobel"]["threshhold"]] = 0  # 直接定位边缘区域置零
+            image = edged_img   
+        return image, mask
+
+    def morphology_aug(self, image, mask):
+        """形态学增强"""
+        if np.random.rand() < 0.5:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.config["morphology"]["kernel_size"], self.config["morphology"]["kernel_size"]))
+            image = cv2.morphologyEx(image, cv2.MORPH_OPEN, kernel)
+        else:
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (self.config["morphology"]["kernel_size"], self.config["morphology"]["kernel_size"]))
+            image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
+        return image, mask
+
+    def histogram_equalization(self, image, mask):
+        """
+        灰度图像直方图均衡化
+        使用 OpenCV 的 cv2.equalizeHist 方法增强图像对比度。
+        """
+        if len(image.shape) != 2:
+            raise ValueError("输入图像应为灰度图，但图像通道数为：{}".format(len(image.shape)))
+
+        # 应用直方图均衡化
+        image = cv2.equalizeHist(image)
+
+        return image, mask
+
+    def add_noise(self, image, mask):
+        """添加噪声"""
+        # 高斯噪声
+        if np.random.rand() < self.config["noise"]["gaussian_p"]:
+            noise = np.random.normal(0, 25, image.shape)  # 减小噪声强度
+            image = np.clip(image + noise, 0, 255).astype(np.uint8)
+        
+        # 椒盐噪声
+        if np.random.rand() < self.config["noise"]["sp_p"]:
+            # 椒盐噪声概率
+            sp_prob = self.config["noise"]["sp_p"] / 2  # 将总概率均分给盐和椒
+            if len(image.shape) == 3:
+                salt_pepper = np.random.choice(
+                    [0, 255],
+                    size=image.shape[:2],
+                    p=[sp_prob, 1 - sp_prob]
+                )
+                salt_pepper = salt_pepper[..., None]  # HxWx1
+                salt_pepper = np.repeat(salt_pepper, 3, axis=2)  # HxWx3
+            else:
+                salt_pepper = np.random.choice(
+                    [0, 255],
+                    size=image.shape,
+                    p=[sp_prob, 1 - sp_prob]
+                )
+            image = np.where(salt_pepper == 0, salt_pepper, image)
+        image = image.astype(np.uint8)
+        return image, mask
+    
+    def random_rotate(self, image, mask):
+        """随机旋转"""
+        angle = np.random.choice([0, 90, 180, 270]) if np.random.rand() < 0.3 \
+               else np.random.uniform(-15, 15)
+        
+        h, w = image.shape[:2]
+        center = (w//2, h//2)
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        image = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC)
+        mask = cv2.warpAffine(mask, M, (w, h), flags=cv2.INTER_NEAREST)
+        return image, mask
+
+    def random_erase(self, image, mask):
+        """随机擦除（黑色区域）"""
+        h, w = image.shape[:2]
+        erase_area = self.config["random_erase"]["erase_area_ratio"] * h * w
+        aspect_ratio = np.random.uniform(0.5, 2)
+        
+        erase_h = int(np.sqrt(erase_area * aspect_ratio))
+        erase_w = int(erase_area / erase_h)
+        
+        if erase_h < h and erase_w < w:
+            x = np.random.randint(0, w - erase_w)
+            y = np.random.randint(0, h - erase_h)
+            
+            # 修改此处：填充黑色（0）
+            if len(image.shape) == 3:
+                image[y:y+erase_h, x:x+erase_w] = 0  # RGB 黑色 (0,0,0)
+            else:
+                image[y:y+erase_h, x:x+erase_w] = 0  # 灰度图黑色
+            
+            mask[y:y+erase_h, x:x+erase_w] = 0
+        return image, mask
+
+    def unsharp_mask(self, image, mask, sigma=1.5, strength=0.8):
+        """
+        Apply unsharp masking to an image.
+        :param image: Input image (PIL Image or numpy array)
+        :param sigma: Standard deviation for Gaussian blur
+        :param strength: Strength of sharpening
+        """
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+
+        arr = np.array(image).astype(np.float32)
+        blurred = gaussian_filter(arr, sigma=sigma)
+        masked = arr - blurred
+        
+        # Apply the mask to the original image
+        sharpened_image = np.clip(arr + strength * masked, 0, 255).astype(np.uint8)
+        
+        return sharpened_image, mask
+    
+    @staticmethod
+    def visualize(orig, aug):
+        """可视化对比"""
+        fig, axes = plt.subplots(2, 2, figsize=(12,12))
+        
+        axes[0,0].imshow(orig[0], cmap='gray')
+        axes[0,0].set_title('Original Image')
+        axes[0,1].imshow(orig[1], cmap='jet', vmin=0, vmax=3)
+        axes[0,1].set_title('Original Mask')
+        
+        axes[1,0].imshow(aug[0], cmap='gray')
+        axes[1,0].set_title('Augmented Image')
+        axes[1,1].imshow(aug[1], cmap='jet', vmin=0, vmax=3)
+        axes[1,1].set_title('Augmented Mask')
+        
+        plt.tight_layout()
+        plt.show()
+
+def aug_data_processing(root_path, size="256", aug_times=60, data_csv=None, datasets_name=None):
+    path_dict = {'img': [], 'mask': []}
+    # 配置参数
+    config = {
+        "input": {
+            "images": os.path.join(root_path, "images"),
+            "masks": os.path.join(root_path, "masks")
+        },
+        "output": {
+            "images": os.path.join(root_path, "aug_results/images"),
+            "masks": os.path.join(root_path, "aug_results/masks")
+        },
+        "size"     : size,
+        "aug_times": aug_times,
+        "aug_config": {
+                        "morphology": {"kernel_size": 3, "p": 0.3},
+                        "histogram_equalization": {"p": 0.1},
+                        "noise": {"gaussian_p": 0.5, "sp_p": 0.1},
+                        "random_erase": {"p": 0.3}
+                    }
+    }
+
+    # 初始化
+    augmentor = ShaleAugmentor(config["aug_config"])
+    output_images_path = os.path.join(os.path.join(config["output"]["images"], config["size"]), "time_" + str(config['aug_times']))
+    output_masks_path = os.path.join(os.path.join(config["output"]["masks"], config["size"]), "time_" + str(config['aug_times']))
+    if datasets_name:
+        output_images_path = os.path.join(output_images_path, datasets_name)
+        output_masks_path = os.path.join(output_masks_path, datasets_name)
+    print("Output images path:", output_images_path)
+    print("Output masks path:", output_masks_path)
+    os.makedirs(output_images_path, exist_ok=True)
+    os.makedirs(output_masks_path, exist_ok=True)
+
+    if not data_csv.empty:
+        original_img_path_list = [os.path.basename(path) for path in data_csv["img"].values]
+        original_img_path = os.path.dirname(data_csv["img"].values[0])
+        original_mask_path = os.path.dirname(data_csv["mask"].values[0])
+    else:    
+        original_img_path_list = os.listdir(os.path.join(config["input"]["images"], config["size"]))
+        original_img_path = os.path.join(config["input"]["images"], config["size"])
+        original_mask_path = os.path.join(config["input"]["masks"], config["size"])
+
+    # 处理每个样本
+    for img_file in tqdm(original_img_path_list):
+        if not img_file.lower().endswith(('.png', '.jpg', '.jpeg')):
+            continue
+
+        base_name = os.path.splitext(os.path.basename(img_file))[0]
+        # try:
+        image = Image.open(os.path.join(original_img_path, img_file)).convert("L")
+        mask = Image.open(os.path.join(original_mask_path, f"{base_name}.png"))
+        
+        # 数据增强
+        for i in range(config["aug_times"]):
+            aug_img, aug_mask = augmentor(image, mask)
+            
+            # # 可视化检查
+            # if i == 0:  # 只检查第一个增强结果
+            #     augmentor.visualize(
+            #         (np.array(image), np.array(mask)),
+            #         (np.array(aug_img), np.array(aug_mask))
+            #     )
+            
+            # 保存结果
+            img_path = os.path.join(output_images_path, f"{base_name}_aug{i}.jpg")
+            mask_path = os.path.join(output_masks_path, f"{base_name}_aug{i}.png")
+            aug_img.save(img_path)
+            aug_mask.save(mask_path)
+            path_dict["img"].append(img_path)
+            path_dict["mask"].append(mask_path)
+    
+    return path_dict
+
+        # except Exception as e:
+        #     print(f"Error processing {img_file}: {str(e)}")
+
+def main(args):
+    aug_data_processing(args.root_path, 
+                        args.size, 
+                        args.aug_times
+                        )
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="data augmentation")
+    parser.add_argument("--root_path",    default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets",      type=str,       help="root path")
+    parser.add_argument("--size",         default="256",                                             type=str,       help="size of img and mask") 
+    parser.add_argument("--aug_times",    default=60,                                                type=int,       help="augmentation times")
+    args = parser.parse_args()
+    main(args)
