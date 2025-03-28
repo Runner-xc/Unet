@@ -37,7 +37,7 @@ class SODPresetEval:
         data = self.transforms(img, target)
         return data
     
-t = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+t = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 def main(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
@@ -95,7 +95,7 @@ def main(args):
         image_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg"
         # 滑窗预测
         if args.slide:
-            save_path = f"{args.single_path}/{args.model_name}_sliding.png"
+            save_path = f"{args.single_path}/{args.model}_sliding.png"
             predictor.predict(image_path, save_path)
         
         else:
@@ -114,7 +114,7 @@ def main(args):
             single_path = args.single_path
             if not os.path.exists(single_path):
                 os.mkdir(single_path)
-            pred_img_pil.save(f"{single_path}/{args.model_name}.png")        
+            pred_img_pil.save(f"{single_path}/{args.model}.png")        
             print("预测完成!")
        
     else:
@@ -122,7 +122,7 @@ def main(args):
         with torch.no_grad():
             Metric_list = np.zeros((6, 4))
             test_loader = tqdm(test_loader, desc=f"  Validating  😀", leave=False)
-            save_path = f"{args.save_path}/{args.model_name}"
+            save_path = f"{args.save_path}/{args.model}"
             if not os.path.exists(save_path):
                 os.makedirs(save_path)
                 
@@ -146,9 +146,9 @@ def main(args):
                 pred_img_pil = Image.fromarray(pred_mask_np)
                 
                 # 保存图片
-                if not os.path.exists(f"{save_path}/pred_img/"):
-                    os.makedirs(f"{save_path}/pred_img/")
-                pred_img_pil.save(f"{save_path}/pred_img/{os.path.splitext(img_name)[0]}.png")
+                if not os.path.exists(f"{save_path}/pred_img/{t}"):
+                    os.makedirs(f"{save_path}/pred_img/{t}")
+                pred_img_pil.save(f"{save_path}/pred_img/{t}/{os.path.splitext(img_name)[0]}.png")
             Metric_list /= len(test_loader)
         metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
         metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
@@ -169,28 +169,28 @@ def main(args):
                             for metric_name in metrics_table_left
                         ]
         table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-        write_info = f"{args.model_name}" + "\n" + table_s
+        write_info = f"{args.model}" + "\n" + table_s
         file_path = f'{save_path}/scores/{t}.txt'
         if not os.path.exists(os.path.dirname(file_path)):
             os.makedirs(os.path.dirname(file_path)) 
         with open(file_path, "a") as f:
                     f.write(write_info)
         print(table_s)
-        print("预测完成！")
-            
+        print("预测完成！")         
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/datasets/CSV/test_rock_sem_chged_256_a50_c80.csv')
-    parser.add_argument('--base_size',      type=int,       default=256)
-    parser.add_argument('--model_name',     type=str,       default='msaf_unetv2',     help=' unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/test_shale_256.csv')
+    parser.add_argument('--base_size',      type=int,       default=256 )
+    parser.add_argument('--dropout_p',      type=int,       default=0   )
+    parser.add_argument('--model',          type=str,       default='rdam_unet',     help='unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/save_weights/msaf_unetv2/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_1e-06/2025-03-12_15:38:06/model_best_ep_40.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/rdam_unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_1e-06/2025-03-26_16:23:43/model_best_ep_24.pth')
     
-    parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/predict')
-    parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/results/single_predict')
-    parser.add_argument('--single',         type=bool,      default=True,          help='test single img or not')
-    parser.add_argument('--slide',          type=bool,      default=True)
+    parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/predict')
+    parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/single_predict')
+    parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
+    parser.add_argument('--slide',          type=bool,      default=False)
     
     args = parser.parse_args()
     main(args)
