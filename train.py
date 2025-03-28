@@ -36,6 +36,7 @@ from model.Segnet import SegNet
 from torchinfo import summary
 import swanlab
 
+# 预处理
 class SODPresetTrain:
     def __init__(self, base_size: Union[int, List[int]], crop_size: int,
                  hflip_prob=0.5, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
@@ -61,14 +62,34 @@ class SODPresetEval:
 
     def __call__(self, img, target):
         data = self.transforms(img, target)
-        return data
+        return data  
     
+# ===================== 表情符号配置 =====================
+PARAM_ICONS = {
+    'model': '📦', 'lr': '📚', 'wd': '⚖️', 'dropout': '☔',
+    'l1_lambda': 'λ¹', 'l2_lambda': 'λ²', 'scheduler': '🔄',
+    'loss_fn': '💥', 'best_epoch': '🏆', 'time': '🕒', 'cost': '⏳'
+}   
 
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-detailed_time_str = time.strftime("%Y-%m-%d_%H:%M:%S")
+detailed_time_str = time.strftime("%Y-%m-%d_%H-%M-%S")
 
+def format_epoch_header(epoch, end_epoch):
+                return f"\n🚀✨═ Epoch {epoch+1}/{end_epoch} ═✨🚀\n"
+
+def build_params_block(args):
+    return (
+        f"{PARAM_ICONS['model']} model : {args.model}\n"
+        f"{PARAM_ICONS['lr']} lr : {args.lr}\n"
+        f"{PARAM_ICONS['wd']} wd : {args.wd}\n"
+        f"{PARAM_ICONS['dropout']} dropout : {args.dropout_p}\n"
+        f"{PARAM_ICONS['l1_lambda']} l1_lambda : {args.l1_lambda}\n"
+        f"{PARAM_ICONS['l2_lambda']} l2_lambda : {args.l2_lambda}\n"
+        f"{PARAM_ICONS['scheduler']} scheduler : {args.scheduler}\n"
+        f"{PARAM_ICONS['loss_fn']} loss_fn : {args.loss_fn}"
+                )
 def main(args, aug_args):
     """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
     # 将args转换为字典
@@ -126,11 +147,11 @@ def main(args, aug_args):
     # 划分数据集
     if args.num_small_data is not None:
         train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
-                                                                                                    num_small_data=args.num_small_data, 
-                                                                                                    # train_ratio=0.8, 
-                                                                                                    # val_ratio=0.1, 
-                            save_root_path=args.data_root_path,
-                            flag=args.split_flag) 
+                                                                                   num_small_data = args.num_small_data, 
+                                                                                   # train_ratio=0.8, 
+                                                                                   # val_ratio=0.1, 
+                                                                                   save_root_path = args.data_root_path,
+                                                                                   flag           = args.split_flag) 
     
     else:
         train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(aug_args, args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
@@ -162,6 +183,8 @@ def main(args, aug_args):
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
     # 加载模型
     model_map = {
+
+            # UNet 系列
             "u2net_full"                    : u2net_full_config(),
             "u2net_lite"                    : u2net_lite_config(),
             "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
@@ -171,6 +194,8 @@ def main(args, aug_args):
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
+
+            # 其他架构
             "Segnet"                        : SegNet(n_classes=4, dropout_p=args.dropout_p),
             "pspnet"                        : PSPNet(classes=4, dropout=args.dropout_p, pretrained=False),
             "deeplabv3_resnet50"            : deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4),
@@ -202,7 +227,6 @@ def main(args, aug_args):
                         )
 
     elif args.optimizer == 'RMSprop':
-
         optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8, 
                             weight_decay=args.wd
                             )
@@ -212,8 +236,6 @@ def main(args, aug_args):
                           )
         
     # 调度器
-    assert args.scheduler in ['CosineAnnealingLR', 'ReduceLROnPlateau'], \
-            f'scheduler must be CosineAnnealingLR 、ReduceLROnPlateau, but got {args.scheduler}'
     if args.scheduler == 'CosineAnnealingLR':
         # 计算总batch数和warmup步数
         num_batches_per_epoch = len(train_dataloader)
@@ -233,9 +255,8 @@ def main(args, aug_args):
                 else (args.eta_min + (lr_initial - args.eta_min) * 
                     (1 + math.cos(math.pi * (step - warmup_steps) / Tmax_steps)) / 2) / lr_initial
             ),
-            last_epoch=-1  # 初始步数从0开始
-        )
-        
+            last_epoch=-1)  # 初始步数从0开始 
+          
     elif args.scheduler == 'ReduceLROnPlateau':
         scheduler = ReduceLROnPlateau(optimizer, 
                                       mode='min', 
@@ -250,21 +271,16 @@ def main(args, aug_args):
         print(f"wrong scaler name{args.scheduler}")
         
     # 损失函数 
-    assert args.loss_fn in ['CrossEntropyLoss', 'DiceLoss', 'FocalLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd']
-    if args.loss_fn == 'CrossEntropyLoss':
-        loss_fn = CrossEntropyLoss()
-    elif args.loss_fn == 'DiceLoss':
-        loss_fn = diceloss()
-    elif args.loss_fn == 'FocalLoss':
-        loss_fn = Focal_Loss()
-    elif args.loss_fn == 'WDiceLoss':
-        loss_fn = WDiceLoss()
-    elif args.loss_fn == 'DWDLoss':
-        loss_fn = DWDLoss()
-    elif args.loss_fn == 'IoULoss':
-        loss_fn = IOULoss()
-    elif args.loss_fn == 'dice_hd':
-        loss_fn = AdaptiveSegLoss(num_classes=4)
+    loss_map = {
+            'CrossEntropyLoss'  : CrossEntropyLoss(),
+            'DiceLoss'          : diceloss(),
+            'FocalLoss'         : Focal_Loss(),
+            'WDiceLoss'         : WDiceLoss(),
+            'DWDLoss'           : DWDLoss(),
+            'IoULoss'           : IOULoss(),
+            'dice_hd'           : AdaptiveSegLoss(4)
+        }
+    loss_fn = loss_map.get(args.loss_fn)
     
     # 缩放器
     scaler = torch.amp.GradScaler() if args.amp else None
@@ -293,7 +309,7 @@ def main(args, aug_args):
         # 初始化SwanLab（整个训练过程只初始化一次）
         swanlab.init(
             project="UNet",
-            experiment_name=f"{args.model}-{args.loss_fn}",
+            experiment_name=f"{args.model}-{args.loss_fn}-{detailed_time_str}",
             config=config,
         )
     
@@ -343,13 +359,13 @@ def main(args, aug_args):
         best_mean_loss = checkpoint['best_mean_loss']
         start_epoch = checkpoint['best_epoch']
         best_epoch = checkpoint['best_epoch']
-        print(f"Resume from epoch: {start_epoch}")
+        print(f"🌐Resume from epoch: {start_epoch}")
     
     """训练"""   
     for epoch in range(start_epoch, end_epoch):
         
-        print(f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈")
-        print(f"--Training-- 😀")
+        print(f"\n ✈️»»——————————————««  Epoch {epoch+1}/{end_epoch}  »»——————————————««✈️")
+        print(f"🌈 ---- Starting Training ---- 🌈")
         # 记录时间
         start_time = time.time()
         # 训练
@@ -389,16 +405,16 @@ def main(args, aug_args):
 
         # 打印
         print(
-              f"train_OM_loss: {train_OM_loss:.3f}\n"
-              f"train_OP_loss: {train_OP_loss:.3f}\n"
-              f"train_IOP_loss: {train_IOP_loss:.3f}\n"
-              f"train_mean_loss: {train_mean_loss:.3f}\n"
-              f"train_cost_time: {train_cost_time:.2f}s\n")
+              f"💧train_OM_loss: {train_OM_loss:.3f}\n"
+              f"💧train_OP_loss: {train_OP_loss:.3f}\n"
+              f"💧train_IOP_loss: {train_IOP_loss:.3f}\n"
+              f"💧train_mean_loss: {train_mean_loss:.3f}\n"
+              f"🕒train_cost_time: {train_cost_time:.2f}s\n")
         
 
         """验证"""
         if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
-            print(f"--Validation-- 😀")
+            print(f"🌈 ---- Starting Validation ---- 🌈")
             # 记录验证开始时间
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
@@ -429,12 +445,12 @@ def main(args, aug_args):
 
             # 打印结果
             print(
-                  f"val_OM_loss: {val_OM_loss:.3f}\n"
-                  f"val_OP_loss: {val_OP_loss:.3f}\n"
-                  f"val_IOP_loss: {val_IOP_loss:.3f}\n"
-                  f"val_mean_loss: {val_mean_loss:.3f}\n"
-                  f"val_cost_time: {val_cost_time:.2f}s\n")
-            print(f"Current learning rate: {current_lr}\n")
+                  f"🔥val_OM_loss: {val_OM_loss:.3f}\n"
+                  f"🔥val_OP_loss: {val_OP_loss:.3f}\n"
+                  f"🔥val_IOP_loss: {val_IOP_loss:.3f}\n"
+                  f"🔥val_mean_loss: {val_mean_loss:.3f}\n"
+                  f"🕒val_cost_time: {val_cost_time:.2f}s\n")
+            print(f"🚀Current learning rate: {current_lr}\n")
             
             # 记录日志
             tb = args.tb
@@ -484,36 +500,44 @@ def main(args, aug_args):
             if best_mean_loss >= val_mean_loss:
                 best_mean_loss = val_mean_loss
                 best_epoch = epoch + 1
-            metrics_table_header    = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
-            metrics_table_left      = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
-            epoch_s                 = f"✈✈✈✈✈ epoch : {epoch + 1} / {end_epoch} ✈✈✈✈✈✈\n"
-            model_s                 = f"model : {args.model} \n"
-            lr_s                    = f"lr : {args.lr} \n"
-            wd_s                    = f"wd : {args.wd} \n"  #####
-            dropout_s               = f"dropout : {args.dropout_p} \n"
-            l1_lambda               = f"l1_lambda : {args.l1_lambda} \n"
-            l2_lambda               = f"l2_lambda : {args.l2_lambda} \n"
-            scheduler_s             = f"scheduler : {args.scheduler} \n"
-            loss_fn_s               = f"loss_fn : {args.loss_fn} \n"
-            best_epoch_s            = f"best_epoch : {best_epoch} \n"
-            time_s                  = f"time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')} \n"
-            cost_s                  = f"cost_time :{val_cost_time / 60:.2f}mins \n"
-            
-            metrics_dict    = {scores : val_metrics[scores] for scores in metrics_table_left}
-            metrics_table   = [[metric_name,
-                              metrics_dict[metric_name][-1],
-                              metrics_dict[metric_name][0],
-                              metrics_dict[metric_name][1],
-                              metrics_dict[metric_name][2]
-                            ]
-                             for metric_name in metrics_table_left
-                            ]
-            table_s         = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
-            train_loss_s    = f"train_loss : {train_mean_loss:.3f}  🍎🍎🍎\n"
-            loss_s          = f"val_loss : {val_mean_loss:.3f}   🍎🍎🍎\n"
+        
+            # ===================== 静态配置 =====================
+            metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']  # 原始表头
+            metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']        
 
-            # 记录每个epoch对应的train_loss、lr以及验证集各指标
-            write_info      = epoch_s + model_s + lr_s + wd_s + dropout_s + l1_lambda + l2_lambda + loss_fn_s + scheduler_s + train_loss_s + loss_s + table_s + '\n' + best_epoch_s + cost_s + time_s
+            epoch_s = format_epoch_header(epoch, end_epoch)
+            params_block = build_params_block(args)
+
+            # 指标表格
+            metrics_dict = {name: val_metrics[name] for name in metrics_table_left}
+            metrics_table = [
+                [name,  
+                f"{metrics_dict[name][-1]:.3f}",  # 平均
+                f"{metrics_dict[name][0]:.3f}",   # OM
+                f"{metrics_dict[name][1]:.3f}",   # OP
+                f"{metrics_dict[name][2]:.3f}"]   # IOP
+                for name in metrics_table_left
+            ]
+
+            training_info = (
+                f"\n🍎 Train Loss: {train_mean_loss:.3f} "
+                f"| 🍏 Val Loss: {val_mean_loss:.3f}\n"
+                f"{PARAM_ICONS['best_epoch']} best_epoch : {best_epoch}\n"
+                f"{PARAM_ICONS['time']} time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')}\n"
+                f"{PARAM_ICONS['cost']} cost_time : {val_cost_time/60:.2f} mins"
+            )
+
+            # 输出
+            write_info = (
+                epoch_s +
+                "▂▂▂▂▂ 训练配置 ▂▂▂▂▂\n" +
+                params_block + "\n\n" +
+                "▂▂▂▂▂ 性能指标 ▂▂▂▂▂\n" +
+                tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid') + "\n" +
+                "▂▂▂▂▂ 训练状态 ▂▂▂▂▂\n" +
+                training_info
+            )
+
             print(write_info)
 
             # 保存结果
@@ -552,17 +576,16 @@ def main(args, aug_args):
             # 保存当前最佳模型的权重
             best_model_path = f"{save_weights_path}/model_best_ep_{best_epoch}.pth"
             torch.save(save_file, best_model_path)
-            print(f"Best model saved at epoch {best_epoch} with mean loss {best_mean_loss}")
+            print(f"✨Best model saved at epoch: {best_epoch} with mean loss: {best_mean_loss}✨")
+            
             # 删除之前保存的所有包含"model_best"的文件
             path_list = os.listdir(save_weights_path)
             for i in path_list:
                 if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
                     os.remove(os.path.join(save_weights_path, i))
-                    print(f"remove last best weight:{i}")
-                            
-            current_miou = val_metrics["mIoU"][-1]
+                    print(f"✅remove last best weight:{i}✅")                         
 
-            # only save latest 3 epoch weights
+            # 保存最后三个epoch权重
             if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
                 os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
                 
@@ -585,7 +608,7 @@ def main(args, aug_args):
     writer.close()
     total_time = time.time() - initial_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print("====training over. total time: {}".format(total_time_str))
+    print("✅training over. ⏳total time: {}".format(total_time_str))
         
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
@@ -654,7 +677,7 @@ if __name__ == '__main__':
     parser.add_argument('--warmup_epochs',  type=int,   default=10,      help='number of warmup epochs')
 
 
-    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--lr',             type=float, default=3e-4,   help='learning rate')
     parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
