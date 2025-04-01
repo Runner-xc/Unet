@@ -11,11 +11,13 @@ class ShaleAugmentor:
     def __init__(self, config=None):
         # 默认配置
         default_config = {
+            "unsharp_mask": {"p": 0.2, "sigma": 1.0, "strength": 0.5},
             "morphology": {"kernel_size": 3, "p": 0.3},
-            "histogram_equalization": {"p": 0.05},  # 降低直方图均衡化的概率
-            "noise": {"gaussian_p": 0.3, "sp_p": 0.05},  # 降低噪声添加的概率和强度
-            "random_erase": {"p": 0.2, "erase_area_ratio": 0.01},  # 降低擦除的概率和区域大小
-            "sobel": {"threshhold" : 120},
+            "histogram_equalization": {"p": 0.05},                              # 降低直方图均衡化的概率
+            "noise": {"gaussian_p": 0.3, "sp_p": 0.05, "gaussian_sigma": 40},   # 降低噪声添加的概率和强度
+            "random_erase": {"p": 0.2, "erase_area_ratio": 0.01},               # 降低擦除的概率和区域大小
+            "sobel": {"threshhold" : 120, "p": 0.2},
+            "random_rotate": {"p": 0.3},    
         }
         # 深度合并配置
         if config:
@@ -65,6 +67,9 @@ class ShaleAugmentor:
     def _get_prob(self, method_name):
         """获取各方法的默认概率"""
         prob_map = {
+            "random_rotate": self.config["random_rotate"]["p"],
+            "unsharp_mask": self.config["unsharp_mask"]["p"],
+            "sobel": self.config["sobel"]["p"],
             "morphology_aug": self.config["morphology"]["p"],
             "histogram_equalization": self.config["histogram_equalization"]["p"],
             "add_noise": self.config["noise"]["gaussian_p"],
@@ -78,9 +83,8 @@ class ShaleAugmentor:
             sobelx = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)
             sobely = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)
             gradmag = cv2.magnitude(sobelx, sobely)
-            edged_img = image.copy()
-            edged_img[gradmag > self.config["sobel"]["threshhold"]] = 0  # 直接定位边缘区域置零
-            image = edged_img   
+            gradmag_normalized = (gradmag / gradmag.max() * 255).astype(np.uint8)
+            image = cv2.addWeighted(image, 0.8, gradmag_normalized, 0.2, 0)  # 叠加边缘增强  
         return image, mask
 
     def morphology_aug(self, image, mask):
@@ -110,7 +114,7 @@ class ShaleAugmentor:
         """添加噪声"""
         # 高斯噪声
         if np.random.rand() < self.config["noise"]["gaussian_p"]:
-            noise = np.random.normal(0, 25, image.shape)  # 减小噪声强度
+            noise = np.random.normal(0, self.config["noise"]["gaussian_sigma"], image.shape)  # 减小噪声强度
             image = np.clip(image + noise, 0, 255).astype(np.uint8)
         
         # 椒盐噪声
@@ -138,7 +142,7 @@ class ShaleAugmentor:
     def random_rotate(self, image, mask):
         """随机旋转"""
         angle = np.random.choice([0, 90, 180, 270]) if np.random.rand() < 0.3 \
-               else np.random.uniform(-15, 15)
+               else np.random.uniform(-30, 30)
         
         h, w = image.shape[:2]
         center = (w//2, h//2)
@@ -176,6 +180,9 @@ class ShaleAugmentor:
         :param sigma: Standard deviation for Gaussian blur
         :param strength: Strength of sharpening
         """
+        sigma = self.config["unsharp_mask"]["sigma"]       # 需要修复此处
+        strength = self.config["unsharp_mask"]["strength"]
+
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
 
@@ -220,16 +227,53 @@ def aug_data_processing(root_path, size="256", aug_times=60, data_csv=None, data
         },
         "size"     : size,
         "aug_times": aug_times,
-        "aug_config": {
-                        "morphology": {"kernel_size": 3, "p": 0.3},
-                        "histogram_equalization": {"p": 0.1},
-                        "noise": {"gaussian_p": 0.5, "sp_p": 0.1},
-                        "random_erase": {"p": 0.3}
-                    }
-    }
+        }
+    
+    train_aug_config = {
+                    "sobel": {"threshhold" : 110, "p": 0.2},
+                    "unsharp_mask": {"p": 0.3, "sigma": 1.0, "strength": 0.5},  
+                    "morphology": {"kernel_size": 5, "p": 0.3},
+                    "histogram_equalization": {"p": 0.05},
+                    "noise": {"gaussian_p": 0.5, "sp_p": 0.05, "gaussian_sigma": 15},
+                    "random_erase": {"p": 0.4, "erase_area_ratio": 0.05},
+                    "random_rotate": {"p": 0.5},
+                }
+    
+    val_aug_config = {
+                    "sobel": {"p": 0},
+                    "unsharp_mask": {"p": 0},  
+                    "morphology": {"kernel_size": 3, "p": 0.3},
+                    "histogram_equalization": {"p": 0.02},
+                    "noise": {"gaussian_p": 0.2, "sp_p": 0.1, "gaussian_sigma": 15},
+                    "random_erase": {"p": 0.2, "erase_area_ratio": 0.01},
+                    "random_rotate": {"p": 0.5},
+                }
+    
+    test_aug_config = {
+                    "sobel": {"p": 0},
+                    "random_rotate": {"p": 0.5},
+                    "unsharp_mask": {"p": 0},
+                    "morphology": {"p": 0},
+                    "histogram_equalization": {"p": 0},
+                    "noise": {"gaussian_p": 0},
+                    "random_erase": {"p": 0}
+                }
+    
 
-    # 初始化
-    augmentor = ShaleAugmentor(config["aug_config"])
+    # 初始化数据集增强器
+    train_augmentor = ShaleAugmentor(train_aug_config)
+    val_augmentor = ShaleAugmentor(val_aug_config)
+    test_augmentor = ShaleAugmentor(test_aug_config)
+    if datasets_name == "train":
+        augmentor = train_augmentor
+    elif datasets_name == "val":
+        augmentor = val_augmentor
+    elif datasets_name == "test":
+        augmentor = test_augmentor
+    else:
+        raise ValueError("Invalid datasets_name. Choose from 'train', 'val', or 'test'.")
+
+    # 输出路径
     output_images_path = os.path.join(os.path.join(config["output"]["images"], config["size"]), "time_" + str(config['aug_times']))
     output_masks_path = os.path.join(os.path.join(config["output"]["masks"], config["size"]), "time_" + str(config['aug_times']))
     if datasets_name:
