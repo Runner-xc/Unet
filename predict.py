@@ -185,7 +185,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout_p',      type=int,       default=0   )
     parser.add_argument('--model',          type=str,       default='rdam_unet',     help='unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/rdam_unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_1e-06/2025-03-26_16:23:43/model_best_ep_24.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/rdam_unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0003-wd_0.0001/2025-03-31_17-00-12/model_best_ep_12.pth')
     
     parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/predict')
     parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/single_predict')

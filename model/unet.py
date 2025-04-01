@@ -4,7 +4,9 @@ unet
 import torch
 from torchinfo import summary
 import torch.nn as nn
-from tensorboardX import SummaryWriter   
+from tensorboardX import SummaryWriter 
+from .utils.model_info import calculate_computation  
+
 class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(OutConv, self).__init__()
@@ -143,11 +145,19 @@ class ResD_UNet(nn.Module):
 if __name__ == '__main__':
     from utils.attention import EMA
     from utils.modules import *   
-    model = UNet(in_channels=3, n_classes=4, p=0.25)
+    model = UNet(in_channels=3, n_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    x = torch.randn(3,320,320)
-    summary(model)
+    x = torch.randn(3,256,256)
+    summary(model, (1, 3, 256, 256))
+    calculate_computation(model, input_size=(3, 256, 256), device=device)
+    # ========================================
+    # Input size: (3, 256, 256)
+    # FLOPs: 28.87 GFLOPs
+    # MACs: 14.44 GMACs
+    # Params: 9.04 M
+    # ========================================
+
 else:
     from model.utils.attention import *
     from model.utils.modules import * 

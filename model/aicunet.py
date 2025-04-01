@@ -141,12 +141,10 @@ class AICUNet(nn.Module):
                  n_classes,
                  p, 
                  base_channels=32,
-                 bilinear=True
                  ):
         super(AICUNet, self).__init__()
         self.in_channels = in_channels
         self.n_classes = n_classes
-        self.bilinear = bilinear
         
         self.encoder1 = AIConv2d(in_channels, base_channels) 
         self.encoder2 = AIConv2d(base_channels, base_channels*2)

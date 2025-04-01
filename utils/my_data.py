@@ -100,8 +100,8 @@ class SEM_DATA(Dataset):
 if __name__ == '__main__':
     #数据集路径
     root_path = '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets'
-    csv_path = '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV'
-    csv_name = 'shale_256.csv'
+    csv_path  = '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV'
+    csv_name  = 'shale_256.csv'
     size = "256"
     save_sem_paths_to_csv(root_path, csv_path, csv_name, size)
     # # 转换
