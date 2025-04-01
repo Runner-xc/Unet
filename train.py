@@ -16,8 +16,9 @@ from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
 from model.a_unet import A_UNet
 from model.m_unet import M_UNet
-from model.rdam_unet import RDAM_UNet
+from model.rdam_unet import RDAM_UNet, DWRDAM_UNet
 from model.vm_unet import VMUNet
+from model.dc_unet import DC_UNet
 from tabulate import tabulate
 from utils.train_and_eval import *
 from utils.model_initial import *
@@ -77,7 +78,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 detailed_time_str = time.strftime("%Y-%m-%d_%H-%M-%S")
 
 def format_epoch_header(epoch, end_epoch):
-                return f"\n🚀✨═ Epoch {epoch+1}/{end_epoch} ═✨🚀\n"
+                return f"\n🚀✨========= Epoch {epoch+1}/{end_epoch} =========✨🚀\n"
 
 def build_params_block(args):
     return (
@@ -87,9 +88,10 @@ def build_params_block(args):
         f"{PARAM_ICONS['dropout']} dropout : {args.dropout_p}\n"
         f"{PARAM_ICONS['l1_lambda']} l1_lambda : {args.l1_lambda}\n"
         f"{PARAM_ICONS['l2_lambda']} l2_lambda : {args.l2_lambda}\n"
-        f"{PARAM_ICONS['scheduler']} scheduler : {args.scheduler}\n"
-        f"{PARAM_ICONS['loss_fn']} loss_fn : {args.loss_fn}"
+        f"{PARAM_ICONS['loss_fn']} loss_fn : {args.loss_fn}\n"
+        f"{PARAM_ICONS['scheduler']} scheduler : {args.scheduler}\n"        
                 )
+
 def main(args, aug_args):
     """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
     # 将args转换为字典
@@ -134,7 +136,7 @@ def main(args, aug_args):
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"{args.modification_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
+    save_modification_path = f"{args.results_path}/{args.modification}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
 
     """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     # 定义设备
@@ -192,8 +194,10 @@ def main(args, aug_args):
             "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
             "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
+            "dc_unet"                       : DC_UNet(in_channels=3, n_classes=4, p=args.dropout_p),
 
             # 其他架构
             "Segnet"                        : SegNet(n_classes=4, dropout_p=args.dropout_p),
@@ -213,27 +217,26 @@ def main(args, aug_args):
     
     """——————————————————————————————————————————————优化器 调度器——————————————————————————————————————————————"""
     # 优化器 
-    assert args.optimizer in ['AdamW', 'SGD', 'RMSprop'], \
-        f'optimizer must be AdamW, SGD, RMSprop but got {args.optimizer}'
-        
-    if args.optimizer == 'AdamW':
-        optimizer = AdamW(model.parameters(), lr=args.lr, 
-                          weight_decay=args.wd
-                          ) # 会出现梯度爆炸或消失
+    optim_map = {
+            'AdamW' : lambda: AdamW(model.parameters(), 
+                                    args.lr, 
+                                    weight_decay=args.wd,
+                                    betas=(0.95, 0.999),
+                                    eps=1e-8
+                                    ),
 
-    elif args.optimizer == 'SGD':
-        optimizer = SGD(model.parameters(), lr=args.lr, momentum=0.9, 
-                        weight_decay=args.wd
-                        )
-
-    elif args.optimizer == 'RMSprop':
-        optimizer = RMSprop(model.parameters(), lr=args.lr, alpha=0.9, eps=1e-8, 
-                            weight_decay=args.wd
-                            )
-    else:
-        optimizer = AdamW(model.parameters(), lr=args.lr, 
-                          weight_decay=args.wd
-                          )
+            'SGD'   : lambda:   SGD(model.parameters(), 
+                                    args.lr, 
+                                    momentum=0.9, 
+                                    weight_decay=args.wd),
+                               
+          'RMSprop' : lambda:RMSprop(model.parameters(), 
+                                    args.lr, 
+                                    alpha=0.9, 
+                                    eps=1e-8, 
+                                    weight_decay=args.wd)
+        }
+    optimizer = optim_map.get(args.optimizer, optim_map['AdamW'])()  
         
     # 调度器
     if args.scheduler == 'CosineAnnealingLR':
@@ -287,7 +290,7 @@ def main(args, aug_args):
     Metrics = Evaluate_Metric()
     
     # 日志保存路径
-    save_logs_path = f"{args.log_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
+    save_logs_path = f"{args.results_path}/{args.log_name}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
     
     if not os.path.exists(save_logs_path):
         os.makedirs(save_logs_path)
@@ -301,8 +304,8 @@ def main(args, aug_args):
         
         # 转换参数为字典并过滤需要记录的参数
         config = vars(args)
-        excluded_params = ['data_path', 'data_root_path', 'save_scores_path', 
-                         'save_weight_path', 'log_path', 'modification_path',
+        excluded_params = ['data_path', 'data_root_path', 'save_scores','results_path', 
+                         'save_weight', 'log_name', 'modification',
                          'device', 'resume', 'save_flag', 'split_flag', 'change_params']
         config = {k: v for k, v in config.items() if k not in excluded_params}
         
@@ -364,8 +367,8 @@ def main(args, aug_args):
     """训练"""   
     for epoch in range(start_epoch, end_epoch):
         
-        print(f"\n ✈️»»——————————————««  Epoch {epoch+1}/{end_epoch}  »»——————————————««✈️")
-        print(f"🌈 ---- Starting Training ---- 🌈")
+        print(f"\n ✈️»»——————————————««  Epoch {epoch+1}/{end_epoch}  »»——————————————««✈️\n")
+        print(f"🌈 ---- Training ---- 🌈")
         # 记录时间
         start_time = time.time()
         # 训练
@@ -409,12 +412,12 @@ def main(args, aug_args):
               f"💧train_OP_loss: {train_OP_loss:.3f}\n"
               f"💧train_IOP_loss: {train_IOP_loss:.3f}\n"
               f"💧train_mean_loss: {train_mean_loss:.3f}\n"
-              f"🕒train_cost_time: {train_cost_time:.2f}s\n")
+              f"🕒train_cost_time: {train_cost_time/60:.2f}mins\n")
         
 
         """验证"""
         if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
-            print(f"🌈 ---- Starting Validation ---- 🌈")
+            print(f"🌈 ---- Validation ---- 🌈")
             # 记录验证开始时间
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
@@ -449,8 +452,8 @@ def main(args, aug_args):
                   f"🔥val_OP_loss: {val_OP_loss:.3f}\n"
                   f"🔥val_IOP_loss: {val_IOP_loss:.3f}\n"
                   f"🔥val_mean_loss: {val_mean_loss:.3f}\n"
-                  f"🕒val_cost_time: {val_cost_time:.2f}s\n")
-            print(f"🚀Current learning rate: {current_lr}\n")
+                  f"🕒val_cost_time: {val_cost_time:.2f}s")
+            print(f"🚀Current learning rate: {current_lr:.7f}")
             
             # 记录日志
             tb = args.tb
@@ -512,36 +515,36 @@ def main(args, aug_args):
             metrics_dict = {name: val_metrics[name] for name in metrics_table_left}
             metrics_table = [
                 [name,  
-                f"{metrics_dict[name][-1]:.3f}",  # 平均
-                f"{metrics_dict[name][0]:.3f}",   # OM
-                f"{metrics_dict[name][1]:.3f}",   # OP
-                f"{metrics_dict[name][2]:.3f}"]   # IOP
+                f"{metrics_dict[name][-1]:.5f}",  # 平均
+                f"{metrics_dict[name][0]:.5f}",   # OM
+                f"{metrics_dict[name][1]:.5f}",   # OP
+                f"{metrics_dict[name][2]:.5f}"]   # IOP
                 for name in metrics_table_left
             ]
 
             training_info = (
+                f"{PARAM_ICONS['time']} time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')}"
                 f"\n🍎 Train Loss: {train_mean_loss:.3f} "
                 f"| 🍏 Val Loss: {val_mean_loss:.3f}\n"
                 f"{PARAM_ICONS['best_epoch']} best_epoch : {best_epoch}\n"
-                f"{PARAM_ICONS['time']} time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')}\n"
-                f"{PARAM_ICONS['cost']} cost_time : {val_cost_time/60:.2f} mins"
+                f"{PARAM_ICONS['cost']} val_cost_time : {val_cost_time/60:.2f} mins"
             )
 
             # 输出
             write_info = (
                 epoch_s +
-                "▂▂▂▂▂ 训练配置 ▂▂▂▂▂\n" +
-                params_block + "\n\n" +
-                "▂▂▂▂▂ 性能指标 ▂▂▂▂▂\n" +
+                "\n========= 训练配置 =========\n" +
+                params_block +
+                "\n========= 性能指标 =========\n" +
                 tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid') + "\n" +
-                "▂▂▂▂▂ 训练状态 ▂▂▂▂▂\n" +
+                "\n========= 训练状态 =========\n" +
                 training_info
             )
 
             print(write_info)
 
             # 保存结果
-            save_scores_path = f'{args.save_scores_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}'
+            save_scores_path = f'{args.results_path}/{args.save_scores}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}'
             if args.elnloss:
                 results_file = f"optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.txt"
             else:
@@ -557,9 +560,9 @@ def main(args, aug_args):
         if args.save_flag:
             # 保存best模型
             if args.elnloss:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
             else:
-                save_weights_path = f"{args.save_weight_path}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
+                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
@@ -576,14 +579,14 @@ def main(args, aug_args):
             # 保存当前最佳模型的权重
             best_model_path = f"{save_weights_path}/model_best_ep_{best_epoch}.pth"
             torch.save(save_file, best_model_path)
-            print(f"✨Best model saved at epoch: {best_epoch} with mean loss: {best_mean_loss}✨")
+            print(f"✨Best model saved at epoch: {best_epoch} ✨with mean loss: {best_mean_loss}")
             
             # 删除之前保存的所有包含"model_best"的文件
             path_list = os.listdir(save_weights_path)
             for i in path_list:
                 if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
                     os.remove(os.path.join(save_weights_path, i))
-                    print(f"✅remove last best weight:{i}✅")                         
+                    print(f"✅remove last best weight:{i}")                         
 
             # 保存最后三个epoch权重
             if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
@@ -622,17 +625,20 @@ if __name__ == '__main__':
                         default="/root/projects/WS-UNet/UNet/datasets/CSV")
     
     # results
-    parser.add_argument('--save_scores_path',   type=str, 
-                        default='/root/projects/WS-UNet/UNet/results/save_scores')
+    parser.add_argument('--results_path',   type=str, 
+                        default='/root/projects/WS-UNet/UNet/results')
     
-    parser.add_argument('--save_weight_path',   type=str,
-                        default="/root/projects/WS-UNet/UNet/results/save_weights")
+    parser.add_argument('--save_scores',   type=str, 
+                        default='save_scores')
     
-    parser.add_argument('--log_path',  type=str,
-                        default="/root/projects/WS-UNet/UNet/results/logs")
+    parser.add_argument('--save_weight',   type=str,
+                        default="save_weights")
     
-    parser.add_argument('--modification_path', type=str,
-                        default="/root/projects/WS-UNet/UNet/results/modification_log")
+    parser.add_argument('--log_name',  type=str,
+                        default="logs")
+    
+    parser.add_argument('--modification', type=str,
+                        default="modification_log")
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
@@ -670,19 +676,19 @@ if __name__ == '__main__':
     
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7) 
-    parser.add_argument('--val_ratio',      type=float, default=0.1)
+    parser.add_argument('--val_ratio',      type=float, default=0.2)
     parser.add_argument('--batch_size',     type=int,   default=8  ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
     parser.add_argument('--warmup_epochs',  type=int,   default=10,      help='number of warmup epochs')
 
 
-    parser.add_argument('--lr',             type=float, default=3e-4,   help='learning rate')
-    parser.add_argument('--wd',             type=float, default=1e-6,   help='weight decay')
+    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--wd',             type=float, default=1e-4,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
-    parser.add_argument('--Tmax',           type=int,   default=45,     help='the numbers of half of T for CosineAnnealingLR')
+    parser.add_argument('--Tmax',           type=int,   default=120,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
 
     main_args = parser.parse_args()
