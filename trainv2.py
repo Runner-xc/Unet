@@ -1,7 +1,7 @@
 import torch
 import datetime
 from torch.utils.data import DataLoader
-from utils.my_data import SEM_DATA
+from utils.rock_data import SEM_DATA
 from utils import data_split
 from utils.writing_logs import writing_logs
 import argparse

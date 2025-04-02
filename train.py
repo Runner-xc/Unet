@@ -1,7 +1,7 @@
 import torch
 import datetime
 from torch.utils.data import DataLoader, Dataset
-from utils.my_data import SEM_DATA
+from utils.rock_data import SEM_DATA
 from utils import data_split
 from utils.writing_logs import writing_logs
 import argparse
@@ -604,7 +604,7 @@ def main(args, aug_args):
             patience += 1 
     
         # 早停判断
-        if patience >= 50:    
+        if patience >= 30:    
             print('恭喜你触发早停！！')
             break
 
@@ -642,7 +642,7 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="rdam_unet", 
+                        default="unet", 
                         help=" unet, ResD_unet, rdam_unet, a_unet, m_unet, aicunet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
@@ -665,7 +665,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout_p',      type=float, default=0.4  )
      
     parser.add_argument('--device',         type=str,   default='cuda:0')
-    parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
+    parser.add_argument('--resume',         type=str,   default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_0.0001/2025-04-02_13-08-53/model_ep_23.pth",   help="the path of weight for resuming")
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
@@ -688,7 +688,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
-    parser.add_argument('--Tmax',           type=int,   default=120,     help='the numbers of half of T for CosineAnnealingLR')
+    parser.add_argument('--Tmax',           type=int,   default=60,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
 
     main_args = parser.parse_args()
