@@ -151,6 +151,7 @@ class AICUNet(nn.Module):
         self.encoder3 = AIConv2d(base_channels*2, base_channels*4)
         self.encoder4 = AIConv2d(base_channels*4, base_channels*8)
         self.down = nn.MaxPool2d(kernel_size=2, stride=2)
+        
         # dropout
         self.encoder_dropout = nn.Dropout2d(p=p)                            # 编码器更高dropout
         self.decoder_dropout = nn.Dropout2d(p=p-0.1 if p-0.1>0 else 0.0)    # 解码器较低dropout
