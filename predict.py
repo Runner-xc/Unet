@@ -92,7 +92,7 @@ def main(args):
 
     if args.single:
         # 单张预测
-        image_path = "/mnt/e/VScode/WS-Hub/WS-U2net/U-2-Net/Image1 - 003.jpeg"
+        image_path = "/mnt/e/VScode/WS-Hub/WS-UNet/UNet/Image1 - 003.jpeg"
         # 滑窗预测
         if args.slide:
             save_path = f"{args.single_path}/{args.model}_sliding.png"
@@ -183,9 +183,9 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/test_shale_256.csv')
     parser.add_argument('--base_size',      type=int,       default=256 )
     parser.add_argument('--dropout_p',      type=int,       default=0   )
-    parser.add_argument('--model',          type=str,       default='rdam_unet',     help='unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--model',          type=str,       default='unet',     help='unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/rdam_unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_0.0001/2025-04-01_17-40-23/model_best_ep_23.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_0.0001/2025-04-02_18-33-53/model_best_ep_13.pth')
     
     parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/predict')
     parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/single_predict')

@@ -642,7 +642,7 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="unet", 
+                        default="rdam_unet", 
                         help=" unet, ResD_unet, rdam_unet, a_unet, m_unet, aicunet\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
@@ -662,10 +662,10 @@ if __name__ == '__main__':
     parser.add_argument('--elnloss',        type=bool,  default=False)
     parser.add_argument('--l1_lambda',      type=float, default=0.001)
     parser.add_argument('--l2_lambda',      type=float, default=0.001)
-    parser.add_argument('--dropout_p',      type=float, default=0.4  )
+    parser.add_argument('--dropout_p',      type=float, default=0.5  )
      
     parser.add_argument('--device',         type=str,   default='cuda:0')
-    parser.add_argument('--resume',         type=str,   default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0008-wd_0.0001/2025-04-02_13-08-53/model_ep_23.pth",   help="the path of weight for resuming")
+    parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
