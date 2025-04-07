@@ -12,6 +12,4 @@ jupyter/
 *.tif
 **/__pycache__
 
-!images/
-!model.jpg
-!results.png
+!UNet.png
