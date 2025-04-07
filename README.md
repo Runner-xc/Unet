@@ -6,7 +6,11 @@
 • 训练时使用`tensorboard`及`Swanlab`实时记录训练日志
 
 ### UNet
+<div align="center">
+
 ![alt text](UNet.png)
+
+</div>
 
 #### 快速开始
 ```bash
