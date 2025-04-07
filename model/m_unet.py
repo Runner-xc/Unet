@@ -20,7 +20,7 @@ class M_UNet(nn.Module):
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
         # 编码器
-        self.encoder1 = DoubleConv(in_channels,      base_channels, kernel_size=3, padding=1)
+        self.encoder1 = DoubleConv(in_channels,      base_channels)
         self.encoder2 = DoubleConv(base_channels,     base_channels*2)
         self.encoder3 = DoubleConv(base_channels*2,   base_channels*4)
         self.encoder4 = DoubleConv(base_channels*4,   base_channels*8)
@@ -44,7 +44,7 @@ class M_UNet(nn.Module):
         self.decoder1 = DoubleConv(base_channels * 16 ,   base_channels * 4)
         self.decoder2 = DoubleConv(base_channels * 8,     base_channels * 2)
         self.decoder3 = DoubleConv(base_channels * 4,     base_channels)
-        self.decoder4 = DoubleConv(base_channels * 2,    base_channels, kernel_size=3, padding=1)
+        self.decoder4 = DoubleConv(base_channels * 2,     base_channels)
         # decoder_dropout
         self.decoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
         self.decoder_dropout2 = nn.Dropout2d(p=p*0.2 if p!=0 else 0)

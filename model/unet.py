@@ -99,7 +99,11 @@ class ResD_UNet(UNet):
                  p, 
                  base_channels=32,
                  ):
-        super(ResD_UNet, self).__init__()
+        super(ResD_UNet, self).__init__(
+            in_channels=in_channels,
+            n_classes=n_classes,
+            p=p,
+            base_channels=base_channels)
         # 编码器
         self.encoder2 = ResDConv(base_channels, base_channels*2)
         self.encoder3 = ResDConv(base_channels*2, base_channels*4) 

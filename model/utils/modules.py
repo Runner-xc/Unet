@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 
 """-------------------------------------------------Convolution----------------------------------------------"""
 class DWConv(nn.Module):
@@ -414,11 +415,18 @@ class DenseASPPBlock(nn.Module):
     
 """---------------------------------------------AMSFN----------------------------------------------------""" 
 class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
-    def __init__(self, in_channels, mid_channels=None):
+    def __init__(self, in_channels, out_channels=None, mid_channels=None,):
         super(AMSFN, self).__init__()
+        if out_channels is None:
+            out_channels = in_channels
         if mid_channels is None:
-            mid_channels = in_channels // 2 
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
+            mid_channels = in_channels // 2
+
+        self.conv1x1 = nn.Sequential(nn.MaxPool2d(kernel_size=3, stride=1, padding=1),
+                                     nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0),
+                                     nn.BatchNorm2d(in_channels),
+                                     nn.ReLU(inplace=True))
+
         # 3×3
         self.cbr1 = nn.Sequential(
             DWConv(in_channels, in_channels, kernel_size=3, padding=1),
@@ -449,8 +457,8 @@ class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.sgm = nn.Sigmoid()
         self.final_conv = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0),
-            nn.BatchNorm2d(in_channels),
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True))
         
         self.mlp = nn.Sequential(
@@ -460,18 +468,17 @@ class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
         )
 
     def forward(self, x):
-        inputs = x
-        b, c, h, w = inputs.size()
-        c1 = self.maxpool(inputs)
+        b, c, h, w = x.size()
+        c1 = self.conv1x1(x)
         s1 = self.avg_pool(c1)
 
-        c2 = self.cbr1(inputs)
+        c2 = self.cbr1(x)
         s2 = self.avg_pool(c2)
 
-        c3 = self.cbr2(inputs)
+        c3 = self.cbr2(x)
         s3 = self.avg_pool(c3)
 
-        c4 = self.cbr3(inputs)
+        c4 = self.cbr3(x)
         s4 = self.avg_pool(c4)
 
         out = torch.cat([s1, s2, s3, s4], dim=1)
@@ -487,6 +494,51 @@ class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
         output = c1_weighted + c2_weighted + c3_weighted + c4_weighted
         output = self.final_conv(output)
         return output
+    
+class AMSFNV2(AMSFN):  #Adaptive Convolutional Pooling Network (ACPN)
+    def __init__(self, in_channels, out_channels=None, mid_channels=None,):
+        super(AMSFNV2, self).__init__(in_channels)
+        if out_channels is None:
+            out_channels = in_channels
+        if mid_channels is None:
+            mid_channels = in_channels // 2
+
+        self.conv1x1 = nn.Sequential(nn.MaxPool2d(kernel_size=3, stride=1, padding=1),
+                                     nn.Conv2d(in_channels, in_channels, kernel_size=1, padding=0),
+                                     nn.BatchNorm2d(in_channels),
+                                     nn.ReLU(inplace=True))
+
+        # 3×3
+        self.cbr1 = nn.Sequential(
+            DWConv(in_channels, in_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU(inplace=True))
+              
+        # 5×5
+        self.cbr2 = nn.Sequential(
+            DWConv(in_channels, mid_channels, kernel_size=5, padding=2),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, in_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU(inplace=True))
+               
+        # 7×7
+        self.cbr3 = nn.Sequential(
+            DWConv(in_channels, mid_channels, kernel_size=7, padding=3),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, in_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU(inplace=True))
+
+        self.final_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True))
+
+    def forward(self, x):
+        return super(AMSFNV2, self).forward(x)
 
 if __name__ == '__main__':
     from attention import *
@@ -495,6 +547,9 @@ if __name__ == '__main__':
     out = model(x)
     print(out.shape, "\n",
           model)
+    
+elif os.path.dirname(os.path.abspath(__file__)) == '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/model/utils':
+    from .attention import *
 
 else:
     from model.utils.attention import *

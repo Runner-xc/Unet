@@ -96,12 +96,13 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=1000, deep_base=True):
+    def __init__(self, block, layers, in_channels=3, num_classes=1000, deep_base=True, return_more=False):
         super(ResNet, self).__init__()
         self.deep_base = deep_base
+        self.return_more = return_more
         if not self.deep_base:
             self.inplanes = 64
-            self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
             self.bn1 = nn.BatchNorm2d(64)
         else:
             self.inplanes = 128
@@ -145,22 +146,24 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.relu(self.bn1(self.conv1(x)))
+        x1 = self.relu(self.bn1(self.conv1(x))) # 64
         if self.deep_base:
-            x = self.relu(self.bn2(self.conv2(x)))
-            x = self.relu(self.bn3(self.conv3(x)))
-        x = self.maxpool(x)
+            x1 = self.relu(self.bn2(self.conv2(x1))) # 64
+            x1 = self.relu(self.bn3(self.conv3(x1))) # 128
+        x2 = self.maxpool(x1)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x2 = self.layer1(x2) # 64
+        x3 = self.layer2(x2) # 128
+        x4 = self.layer3(x3) # 256
+        x = self.layer4(x4)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
-
-        return x
+        x = self.fc(x)      # 
+        if self.return_more:
+            return x, x1, x2, x3, x4
+        else:
+            return x
 
 
 def resnet18(pretrained=False, **kwargs):

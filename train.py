@@ -16,7 +16,7 @@ from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
 from model.a_unet import A_UNet
 from model.m_unet import M_UNet
-from model.rdam_unet import RDAM_UNet, DWRDAM_UNet
+from model.rdam_unet import *
 from model.vm_unet import VMUNet
 from model.dc_unet import DC_UNet
 from tabulate import tabulate
@@ -189,12 +189,13 @@ def main(args, aug_args):
             # UNet 系列
             "u2net_full"                    : u2net_full_config(),
             "u2net_lite"                    : u2net_lite_config(),
-            "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
-            "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32, bilinear=True, p=args.dropout_p),
+            "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=0),
+            "dwrdam_unetv2"                 : DWRDAM_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=0),
             "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
             "dc_unet"                       : DC_UNet(in_channels=3, n_classes=4, p=args.dropout_p),
@@ -604,7 +605,7 @@ def main(args, aug_args):
             patience += 1 
     
         # 早停判断
-        if patience >= 30:    
+        if patience >= 50:    
             print('恭喜你触发早停！！')
             break
 
@@ -642,8 +643,8 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="rdam_unet", 
-                        help=" unet, ResD_unet, rdam_unet, a_unet, m_unet, aicunet\
+                        default="dwrdam_unetv2", 
+                        help=" unet, ResD_unet, rdam_unet, a_unet, m_unet, aicunet, dwrdam_unetv2\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--loss_fn',            type=str, 
@@ -680,10 +681,10 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size',     type=int,   default=8  ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
-    parser.add_argument('--warmup_epochs',  type=int,   default=10,      help='number of warmup epochs')
+    parser.add_argument('--warmup_epochs',  type=int,   default=0,      help='number of warmup epochs')
 
 
-    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--lr',             type=float, default=1e-4,   help='learning rate')
     parser.add_argument('--wd',             type=float, default=1e-4,   help='weight decay')
     
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
