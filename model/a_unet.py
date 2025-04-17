@@ -2,8 +2,6 @@ import torch
 from torchinfo import summary
 import torch.nn as nn
 from tensorboardX import SummaryWriter
-from model.utils.attention import *
-from model.utils.modules import * 
  
 class A_UNet(nn.Module):
     def __init__(self, in_channels,
@@ -105,3 +103,23 @@ class A_UNet(nn.Module):
         
         return logits
     
+if __name__ == '__main__':
+    from utils.attention import EMA
+    from utils.modules import *
+    from utils.model_info import calculate_computation     
+    model = A_UNet(in_channels=3, n_classes=4, p=0)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    summary(model, (8, 3, 256, 256))
+    calculate_computation(model, input_size=(3, 256, 256), device=device)
+    # ========================================
+    # Input size: (3, 256, 256)
+    # FLOPs: 28.87 GFLOPs
+    # MACs: 14.44 GMACs
+    # Params: 9.04 M
+    # ========================================
+
+else:
+    from model.utils.attention import *
+    from model.utils.modules import * 
+    from model.utils.model_info import calculate_computation 

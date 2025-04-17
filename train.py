@@ -196,6 +196,7 @@ def main(args, aug_args):
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=0),
             "dwrdam_unetv2"                 : DWRDAM_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=0),
+            'dwrdam_unetv3'                 : DWRDAM_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=0),
             "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
             "dc_unet"                       : DC_UNet(in_channels=3, n_classes=4, p=args.dropout_p),
@@ -643,7 +644,7 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="dwrdam_unetv2", 
+                        default="dwrdam_unet", 
                         help=" unet, ResD_unet, rdam_unet, a_unet, m_unet, aicunet, dwrdam_unetv2\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     

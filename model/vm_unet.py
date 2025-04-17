@@ -2,7 +2,7 @@ import time
 import math
 from functools import partial
 from typing import Optional, Callable
-
+from torchinfo import summary
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -772,5 +772,6 @@ class VMUNet(nn.Module):
             
 if __name__ == "__main__":
     x = torch.randn(3, 3, 256, 256).to("cuda:0")
-    net = VMUNet(3,1).to("cuda:0")
+    net = VMUNet(3,4, drop_path_rate=0).to("cuda:0")
     print(net(x).shape)
+    summary(net, (1, 3, 256, 256), device="cuda:0")

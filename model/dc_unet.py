@@ -3,7 +3,6 @@ from torchinfo import summary
 import torch.nn as nn
 import torch.nn.functional as F
 from tensorboardX import SummaryWriter 
-from model.utils.model_info import calculate_computation
 
 class attention2d(nn.Module):
     def __init__(self, in_planes, ratios, K, temperature, init_weight=True):
@@ -96,10 +95,8 @@ class Dynamic_conv2d(nn.Module):
 
         output = output.view(batch_size, self.out_planes, output.size(-2), output.size(-1))
         return output
-    
-from model.aicunet import AICUNet
 
-class DC_UNet(AICUNet):
+class DC_UNet(nn.Module):
     def __init__(self,
                  in_channels,
                  n_classes,
@@ -108,21 +105,78 @@ class DC_UNet(AICUNet):
                  K=4,
                  temperature=34,
                  ):
-        super(DC_UNet, self).__init__(in_channels, n_classes, p, base_channels)
+        super(DC_UNet, self).__init__()
+        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.down = nn.MaxPool2d(kernel_size=2, stride=2)
+        # 编码器
         self.encoder1 = Dynamic_conv2d(in_channels,       base_channels,   kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
         self.encoder2 = Dynamic_conv2d(base_channels,     base_channels*2, kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
         self.encoder3 = Dynamic_conv2d(base_channels*2,   base_channels*4, kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
         self.encoder4 = Dynamic_conv2d(base_channels*4,   base_channels*8, kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
-
+        # encoder_dropout
+        self.encoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
+        self.encoder_dropout2 = nn.Dropout2d(p=p*0.5 if p!=0 else 0)
+        self.encoder_dropout3 = nn.Dropout2d(p=p*0.7 if p!=0 else 0)
+        self.encoder_dropout4 = nn.Dropout2d(p=p*0.9 if p!=0 else 0)
+        # Bottleneck
+        self.center_conv = DoubleConv(base_channels*8, base_channels*8, mid_channels=base_channels*16)
+        self.bottleneck_dropout = nn.Dropout2d(p=p if p!=0.0 else 0.0)
+        # 解码器
         self.decoder1 = Dynamic_conv2d(base_channels*16,  base_channels*4, kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
         self.decoder2 = Dynamic_conv2d(base_channels*8,   base_channels*2, kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
         self.decoder3 = Dynamic_conv2d(base_channels*4,   base_channels,   kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
         self.decoder4 = Dynamic_conv2d(base_channels*2,   base_channels,   kernel_size=3, ratio=0.25, padding=1, K=K, temperature=temperature)
-        
+        # decoder_dropout
+        self.decoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
+        self.decoder_dropout2 = nn.Dropout2d(p=p*0.2 if p!=0 else 0)
+        # 输出层
+        self.out_conv = nn.Conv2d(base_channels, n_classes, kernel_size=1)
+
     def forward(self, x):
-        return super(DC_UNet, self).forward(x)
+        x1 = self.encoder1(x)             # [1, 32, 320, 320]
+
+        x2 = self.down(x1)
+        x2 = self.encoder2(x2)             # [1, 64, 160, 160]
+        x2 = self.encoder_dropout1(x2)
+
+        x3 = self.down(x2)        
+        x3 = self.encoder3(x3)             # [1, 128, 80, 80]
+        x3 = self.encoder_dropout2(x3)
+
+        x4 = self.down(x3)
+        x4 = self.encoder4(x4)             # [1, 256, 40, 40]
+        x4 = self.encoder_dropout3(x4)
+
+        x5 = self.down(x4)
+        x5 = self.encoder_dropout4(x5)
+                   
+        x = self.center_conv(x5)        # [1, 256, 20, 20]
+        x = self.bottleneck_dropout(x)
+        
+        x = self.up(x)
+        x = torch.cat([x, x4], dim=1)
+        x = self.decoder1(x)             # [1, 512, 40, 40]
+        x = self.decoder_dropout1(x)
+
+        x = self.up(x)
+        x = torch.cat([x, x3], dim=1)
+        x = self.decoder2(x)             # [1, 128, 80, 80]
+        x = self.decoder_dropout2(x)
+
+        x = self.up(x)
+        x = torch.cat([x, x2], dim=1)
+        x = self.decoder3(x)             # [1, 64, 160, 160]
+
+        x = self.up(x)
+        x = torch.cat([x, x1], dim=1)
+        x = self.decoder4(x)             # [1, 32, 320, 320]
+
+        logits = self.out_conv(x)       # [1, c, 320, 320]       
+        return logits
 
 if __name__ == '__main__':
+    from utils.model_info import calculate_computation
+    from utils.modules import DoubleConv
     model = DC_UNet(in_channels=3, n_classes=4, p=0)
     summary(model,(1, 3, 256, 256))
     # ==========================================================================================
@@ -143,3 +197,6 @@ if __name__ == '__main__':
     # MACs: 1.24 GMACs
     # Params: 4.82 M
     # ========================================
+else:
+    from model.utils.model_info import calculate_computation
+    from model.utils.modules import DoubleConv

@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 import math
 from tqdm import tqdm
+from torchvision import transforms as T
 
 class SlidingWindowPredictor:
     def __init__(self, model, device, window_size=256, stride=128):
@@ -64,6 +65,9 @@ class SlidingWindowPredictor:
         # 加载图像并转换
         original_image = Image.open(image_path).convert('RGB')
         original_array = np.array(original_image)
+        original_tensor = T.ToTensor()(original_image)
+        original_tensor = T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))(original_tensor)
+        original_array = torch.permute(original_tensor,(1, 2, 0)).numpy()
         original_h, original_w = original_array.shape[:2]
         
         # 镜像填充

@@ -2,8 +2,6 @@ import torch
 from torchinfo import summary
 import torch.nn as nn
 from tensorboardX import SummaryWriter
-from model.utils.attention import *
-from model.utils.modules import *  
     
 class M_UNet(nn.Module):
     def __init__(self, 
@@ -97,3 +95,18 @@ class M_UNet(nn.Module):
         logits = self.out_conv(x)                           # [1, c, 256, 256]
         
         return logits
+    
+if __name__ == '__main__':
+    from utils.attention import EMA
+    from utils.modules import *
+    from utils.model_info import calculate_computation     
+    model = M_UNet(in_channels=3, n_classes=4, p=0)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    summary(model, (8, 3, 256, 256))
+    calculate_computation(model, input_size=(3, 256, 256), device=device)
+
+else:
+    from model.utils.attention import *
+    from model.utils.modules import * 
+    from model.utils.model_info import calculate_computation 

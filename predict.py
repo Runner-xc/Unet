@@ -13,7 +13,7 @@ from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
 from model.a_unet import A_UNet
 from model.m_unet import M_UNet
-from model.rdam_unet import RDAM_UNet, DWRDAM_UNet
+from model.rdam_unet import *
 from model.vm_unet import VMUNet
 from tqdm import tqdm
 from tabulate import tabulate
@@ -22,6 +22,7 @@ from utils.model_initial import *
 from utils.loss_fn import *
 from utils.metrics import Evaluate_Metric
 import utils.transforms as T
+from torchvision import transforms 
 from typing import Union, List
 from utils.slide_predict import SlidingWindowPredictor
 
@@ -60,6 +61,7 @@ def main(args):
             "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "dwrdam_unetv3"                 : DWRDAM_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
             "Segnet"                        : SegNet(n_classes=4, dropout_p=args.dropout_p),
@@ -87,8 +89,8 @@ def main(args):
     predictor = SlidingWindowPredictor(
         model=model,
         device=device,
-        window_size=1024,
-        stride=512  # 重叠步长设置为窗口大小的一半
+        window_size=512,
+        stride=256  # 重叠步长设置为窗口大小的一半
     )
 
     if args.single:
@@ -103,7 +105,8 @@ def main(args):
             img = Image.open(image_path).convert('RGB')
             img = np.array(img)
             img = torchvision.transforms.ToTensor()(img).to(device)
-            # img = torchvision.transforms.Resize((1024,1024))(img)
+            img = torchvision.transforms.Resize((1792, 2048))(img)
+            img = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))(img)
             img = img.unsqueeze(0)
             logits = model(img)
             pred_mask = torch.argmax(logits, dim=1)  
@@ -147,9 +150,9 @@ def main(args):
                 pred_img_pil = Image.fromarray(pred_mask_np)
                 
                 # 保存图片
-                if not os.path.exists(f"{save_path}/pred_img/{t}"):
-                    os.makedirs(f"{save_path}/pred_img/{t}")
-                pred_img_pil.save(f"{save_path}/pred_img/{t}/{os.path.splitext(img_name)[0]}.png")
+                if not os.path.exists(f"{save_path}/pred_img/V2/{t}"):
+                    os.makedirs(f"{save_path}/pred_img/V2/{t}")
+                pred_img_pil.save(f"{save_path}/pred_img/V2/{t}/{os.path.splitext(img_name)[0]}.png")
             Metric_list /= len(test_loader)
         metrics_table_header = ['Metrics_Name', 'Mean', 'OM', 'OP', 'IOP']
         metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']
@@ -184,13 +187,13 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/test_shale_256.csv')
     parser.add_argument('--base_size',      type=int,       default=256 )
     parser.add_argument('--dropout_p',      type=int,       default=0   )
-    parser.add_argument('--model',          type=str,       default='dwrdam_unet',     help='dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--model',          type=str,       default='Segnet',     help='aicunet, dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/dwrdam_unet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0003-wd_0.0001/2025-04-04_20-08-36/model_best_ep_8.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/Segnet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0001-wd_0.0001/2025-04-16_22-07-58/model_best_ep_20.pth')
     
     parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/predict')
     parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/single_predict')
-    parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
+    parser.add_argument('--single',         type=bool,      default=True,          help='test single img or not')
     parser.add_argument('--slide',          type=bool,      default=False)
     
     args = parser.parse_args()

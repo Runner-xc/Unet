@@ -378,37 +378,37 @@ class DenseASPPBlock(nn.Module):
     def __init__(self, in_channels, inter_channels1, inter_channels2,
                  norm_layer=nn.BatchNorm2d, norm_kwargs=None):
         super(DenseASPPBlock, self).__init__()
-        self.aspp_3 = _DenseASPPConv(in_channels, inter_channels1, inter_channels2, 3, 0.1,
+        self.aspp_1 = _DenseASPPConv(in_channels, inter_channels1, inter_channels2, 1, 0.1,
                                      norm_layer, norm_kwargs)
-        self.aspp_6 = _DenseASPPConv(in_channels + inter_channels2 * 1, inter_channels1, inter_channels2, 6, 0.1,
+        self.aspp_2 = _DenseASPPConv(in_channels + inter_channels2 * 1, inter_channels1, inter_channels2, 2, 0.1,
                                      norm_layer, norm_kwargs)
-        self.aspp_12 = _DenseASPPConv(in_channels + inter_channels2 * 2, inter_channels1, inter_channels2, 12, 0.1,
+        self.aspp_3 = _DenseASPPConv(in_channels + inter_channels2 * 2, inter_channels1, inter_channels2, 3, 0.1,
                                       norm_layer, norm_kwargs)
-        self.aspp_18 = _DenseASPPConv(in_channels + inter_channels2 * 3, inter_channels1, inter_channels2, 18, 0.1,
+        self.aspp_5 = _DenseASPPConv(in_channels + inter_channels2 * 3, inter_channels1, inter_channels2, 5, 0.1,
                                       norm_layer, norm_kwargs)
-        self.aspp_24 = _DenseASPPConv(in_channels + inter_channels2 * 4, inter_channels1, inter_channels2, 24, 0.1,
-                                      norm_layer, norm_kwargs)
+        # self.aspp_24 = _DenseASPPConv(in_channels + inter_channels2 * 4, inter_channels1, inter_channels2, 24, 0.1,
+                                    #   norm_layer, norm_kwargs)
         self.cbr1 = nn.Sequential(
-            nn.Conv2d(in_channels + inter_channels2 * 5, 256, 1, 1),
+            nn.Conv2d(in_channels + inter_channels2 * 4, 256, 1, 1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True)
         )
 
     def forward(self, x):
+        aspp1 = self.aspp_1(x)
+        x = torch.cat([aspp1, x], dim=1)
+
+        aspp2 = self.aspp_2(x)
+        x = torch.cat([aspp2, x], dim=1)
+
         aspp3 = self.aspp_3(x)
         x = torch.cat([aspp3, x], dim=1)
 
-        aspp6 = self.aspp_6(x)
-        x = torch.cat([aspp6, x], dim=1)
+        aspp5 = self.aspp_5(x)
+        x = torch.cat([aspp5, x], dim=1)
 
-        aspp12 = self.aspp_12(x)
-        x = torch.cat([aspp12, x], dim=1)
-
-        aspp18 = self.aspp_18(x)
-        x = torch.cat([aspp18, x], dim=1)
-
-        aspp24 = self.aspp_24(x)
-        x = torch.cat([aspp24, x], dim=1)
+        # aspp24 = self.aspp_24(x)
+        # x = torch.cat([aspp24, x], dim=1)
 
         x = self.cbr1(x)
         return x
@@ -456,16 +456,15 @@ class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
 
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.sgm = nn.Sigmoid()
-        self.final_conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True))
-        
         self.mlp = nn.Sequential(
             nn.Conv2d(in_channels * 4, in_channels, kernel_size=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels, in_channels * 4, kernel_size=1)
         )
+        self.final_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True))
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -497,7 +496,9 @@ class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
     
 class AMSFNV2(AMSFN):  #Adaptive Convolutional Pooling Network (ACPN)
     def __init__(self, in_channels, out_channels=None, mid_channels=None,):
-        super(AMSFNV2, self).__init__(in_channels)
+        super(AMSFNV2, self).__init__(in_channels, 
+                                      out_channels, 
+                                      mid_channels)
         if out_channels is None:
             out_channels = in_channels
         if mid_channels is None:
@@ -532,10 +533,10 @@ class AMSFNV2(AMSFN):  #Adaptive Convolutional Pooling Network (ACPN)
             nn.BatchNorm2d(in_channels),
             nn.ReLU(inplace=True))
 
-        self.final_conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True))
+        # self.final_conv = nn.Sequential(
+        #     nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+        #     nn.BatchNorm2d(out_channels),
+        #     nn.ReLU(inplace=True))
 
     def forward(self, x):
         return super(AMSFNV2, self).forward(x)

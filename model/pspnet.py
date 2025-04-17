@@ -1,10 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-
-from . import resnet as models
-
-
+from torchinfo import summary
 class PPM(nn.Module):
     def __init__(self, in_dim, reduction_dim, bins):
         super(PPM, self).__init__()
@@ -100,10 +97,15 @@ class PSPNet(nn.Module):
 
 if __name__ == '__main__':
     import os
+    import resnet as models
     os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
-    input = torch.rand(4, 3, 473, 473).cuda()
-    model = PSPNet(layers=50, bins=(1, 2, 3, 6), dropout=0.1, classes=21, zoom_factor=1, use_ppm=True, pretrained=True).cuda()
-    model.eval()
-    print(model)
-    output = model(input)
-    print('PSPNet', output.size())
+    input = torch.rand(1, 3, 256, 256).cuda()
+    model = PSPNet(classes=4, dropout=0.5, pretrained=False).cuda()
+    # model.eval()
+    # print(model)
+    # output = model(input)
+    # print('PSPNet', output.size())
+    summary(model, input_size=(1, 3, 256, 256), device='cuda', depth=5)
+
+else:
+    from . import resnet as models

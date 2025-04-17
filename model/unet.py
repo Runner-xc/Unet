@@ -5,7 +5,6 @@ import torch
 from torchinfo import summary
 import torch.nn as nn
 from tensorboardX import SummaryWriter 
-from .utils.model_info import calculate_computation  
   
 class UNet(nn.Module):
     def __init__(self, in_channels,
@@ -29,7 +28,6 @@ class UNet(nn.Module):
         self.encoder_dropout3 = nn.Dropout2d(p=p*0.7 if p!=0 else 0)
         self.encoder_dropout4 = nn.Dropout2d(p=p*0.9 if p!=0 else 0)
         # bottleneck
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.center_conv = DoubleConv(base_channels*8, base_channels*8, mid_channels=base_channels*16)
         self.bottleneck_dropout = nn.Dropout2d(p=p if p!=0.0 else 0.0)
         # 解码器
@@ -110,9 +108,9 @@ class ResD_UNet(UNet):
         self.encoder4 = ResDConv(base_channels*4, base_channels*8)  
 
         # 解码器
-        self.decoder1 = ResDConv(base_channels * 8 , base_channels * 4)   
-        self.decoder2 = ResDConv(base_channels * 4, base_channels * 2)
-        self.decoder3 = ResDConv(base_channels * 2, base_channels)
+        self.decoder1 = ResDConv(base_channels * 16 , base_channels * 4)   
+        self.decoder2 = ResDConv(base_channels * 8, base_channels * 2)
+        self.decoder3 = ResDConv(base_channels * 4, base_channels)
         
     def forward(self, x):      
         return super(ResD_UNet, self).forward(x)
@@ -120,12 +118,12 @@ class ResD_UNet(UNet):
             
 if __name__ == '__main__':
     from utils.attention import EMA
-    from utils.modules import *   
-    model = UNet(in_channels=3, n_classes=4, p=0)
+    from utils.modules import *
+    from utils.model_info import calculate_computation     
+    model = ResD_UNet(in_channels=3, n_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
-    x = torch.randn(3,256,256)
-    summary(model, (1, 3, 256, 256))
+    summary(model, (8, 3, 256, 256))
     calculate_computation(model, input_size=(3, 256, 256), device=device)
     # ========================================
     # Input size: (3, 256, 256)
@@ -137,4 +135,5 @@ if __name__ == '__main__':
 else:
     from model.utils.attention import *
     from model.utils.modules import * 
+    from model.utils.model_info import calculate_computation  
         
