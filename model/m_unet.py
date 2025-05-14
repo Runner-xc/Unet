@@ -11,9 +11,6 @@ class M_UNet(nn.Module):
                  base_channels=32,
                  ):
         super(M_UNet, self).__init__()
-        self.in_channels = in_channels
-        self.n_classes = n_classes
-        self.base_channels = base_channels
         self.down = nn.MaxPool2d(kernel_size=2, stride=2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
@@ -96,11 +93,33 @@ class M_UNet(nn.Module):
         
         return logits
     
+class M_UNetV2(M_UNet):
+    def __init__(self, in_channels, n_classes, p, base_channels=32):
+        super().__init__(in_channels, n_classes, p, base_channels)
+        # attention
+        self.att1 = MDAM(base_channels) 
+        self.att2 = MDAM(base_channels*2)
+        self.att3 = MDAM(base_channels*4)
+        self.att4 = MDAM(base_channels*8)
+    def forward(self, x):
+        return super().forward(x)
+    
+class M_UNetV3(M_UNet):
+    def __init__(self, in_channels, n_classes, p, base_channels=32):
+        super().__init__(in_channels, n_classes, p, base_channels)
+        # attention
+        self.att1 = DynamicAttention(base_channels) 
+        self.att2 = DynamicAttention(base_channels*2)
+        self.att3 = DynamicAttention(base_channels*4)
+        self.att4 = DynamicAttention(base_channels*8)
+    def forward(self, x):
+        return super().forward(x)
+    
 if __name__ == '__main__':
     from utils.attention import EMA
     from utils.modules import *
     from utils.model_info import calculate_computation     
-    model = M_UNet(in_channels=3, n_classes=4, p=0)
+    model = M_UNetV3(in_channels=3, n_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))
