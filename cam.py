@@ -57,7 +57,7 @@ def main(args):
 
     # 加载模型权重
     weights_path = args.weight_path
-    checkpoint = torch.load(weights_path)
+    checkpoint = torch.load(weights_path, weights_only=True)
     state_dict = checkpoint['model']
 
     # 加载模型

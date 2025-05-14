@@ -12,10 +12,10 @@ from model.deeplabv3 import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_m
 from model.pspnet import PSPNet
 from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import UNet, ResD_UNet
+from model.unet import *
 from model.aicunet import AICUNet
-from model.a_unet import A_UNet
-from model.m_unet import M_UNet
+from model.a_unet import *
+from model.m_unet import *
 from model.rdam_unet import *
 from model.vm_unet import VMUNet
 from model.dc_unet import DC_UNet
@@ -191,12 +191,32 @@ def main(args, aug_args):
             "u2net_lite"                    : u2net_lite_config(),
             "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "aw_unet"                       : AWUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+
+            # a_unet
             "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv2"                      : A_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv3"                      : A_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv4"                      : A_UNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv5"                      : A_UNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv6"                      : A_UNetV6(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+
+            # m_unet
             "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "m_unetv2"                      : M_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),    
+
+            "ma_unet"                       : MAUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+
+            # mamba
+            "mamba_aunet"                   : Mamba_AUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            
+            # rdam_unet
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=0),
             "dwrdam_unetv2"                 : DWRDAM_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=0),
             'dwrdam_unetv3'                 : DWRDAM_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=0),
+
+            # 变体
             "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
             "dc_unet"                       : DC_UNet(in_channels=3, n_classes=4, p=args.dropout_p),
@@ -283,6 +303,7 @@ def main(args, aug_args):
             'WDiceLoss'         : WDiceLoss(),
             'DWDLoss'           : DWDLoss(),
             'IoULoss'           : IOULoss(),
+            'ce_dice'           : CEDiceLoss(),
             'dice_hd'           : AdaptiveSegLoss(4)
         }
     loss_fn = loss_map.get(args.loss_fn)
@@ -413,7 +434,7 @@ def main(args, aug_args):
               f"💧train_OM_loss: {train_OM_loss:.3f}\n"
               f"💧train_OP_loss: {train_OP_loss:.3f}\n"
               f"💧train_IOP_loss: {train_IOP_loss:.3f}\n"
-              f"💧train_mean_loss: {train_mean_loss:.3f}\n"
+              f"💧train_loss: {train_mean_loss:.3f}\n"
               f"🕒train_cost_time: {train_cost_time/60:.2f}mins\n")
         
 
@@ -453,7 +474,7 @@ def main(args, aug_args):
                   f"🔥val_OM_loss: {val_OM_loss:.3f}\n"
                   f"🔥val_OP_loss: {val_OP_loss:.3f}\n"
                   f"🔥val_IOP_loss: {val_IOP_loss:.3f}\n"
-                  f"🔥val_mean_loss: {val_mean_loss:.3f}\n"
+                  f"🔥val_loss: {val_mean_loss:.3f}\n"
                   f"🕒val_cost_time: {val_cost_time:.2f}s")
             print(f"🚀Current learning rate: {current_lr:.7f}")
             
@@ -546,11 +567,11 @@ def main(args, aug_args):
             print(write_info)
 
             # 保存结果
-            save_scores_path = f'{args.results_path}/{args.save_scores}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}'
+            save_scores_path = f'{args.results_path}/{args.save_scores}/{args.model}/{args.loss_fn}-{args.scheduler}'
             if args.elnloss:
-                results_file = f"optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.txt"
+                results_file = f"{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.txt"
             else:
-                results_file = f"optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.txt"
+                results_file = f"{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.txt"
             file_path = os.path.join(save_scores_path, results_file)
 
             if not os.path.exists(os.path.dirname(file_path)):
@@ -562,9 +583,9 @@ def main(args, aug_args):
         if args.save_flag:
             # 保存best模型
             if args.elnloss:
-                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
             else:
-                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
+                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
                 
             if not os.path.exists(save_weights_path):
                 os.makedirs(save_weights_path)
@@ -590,13 +611,13 @@ def main(args, aug_args):
                     os.remove(os.path.join(save_weights_path, i))
                     print(f"✅remove last best weight:{i}")                         
 
-            # 保存最后三个epoch权重
-            if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
-                os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
+            # # 保存最后三个epoch权重
+            # if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
+            #     os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
                 
-            if not os.path.exists(save_weights_path):
-                os.makedirs(save_weights_path)
-            torch.save(save_file, f"{save_weights_path}/model_ep_{epoch}.pth") 
+            # if not os.path.exists(save_weights_path):
+            #     os.makedirs(save_weights_path)
+            # torch.save(save_file, f"{save_weights_path}/model_ep_{epoch}.pth") 
         
         # 记录验证loss是否出现上升       
         if val_mean_loss <= current_mean_loss:
@@ -606,7 +627,7 @@ def main(args, aug_args):
             patience += 1 
     
         # 早停判断
-        if patience >= 50:    
+        if patience >= 30:    
             print('恭喜你触发早停！！')
             break
 
@@ -644,13 +665,13 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="dwrdam_unet", 
-                        help=" unet, ResD_unet, rdam_unet, a_unet, m_unet, aicunet, dwrdam_unetv2\
+                        default="mamba_aunet", 
+                        help=" unet, ResD_unet, rdam_unet, ma_unet, a_unet, m_unet, aw_unet, aicunet, dwrdam_unetv2\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--loss_fn',            type=str, 
                         default='DiceLoss', 
-                        help="'CrossEntropyLoss', 'FocalLoss', 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd'")
+                        help="'CrossEntropyLoss', 'FocalLoss', 'ce_dice', 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd'")
     
     parser.add_argument('--optimizer',          type=str, 
                         default='AdamW', 
@@ -679,7 +700,7 @@ if __name__ == '__main__':
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7) 
     parser.add_argument('--val_ratio',      type=float, default=0.2)
-    parser.add_argument('--batch_size',     type=int,   default=8  ) 
+    parser.add_argument('--batch_size',     type=int,   default=8 ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
     parser.add_argument('--warmup_epochs',  type=int,   default=0,      help='number of warmup epochs')
@@ -702,3 +723,4 @@ if __name__ == '__main__':
     aug_args = aug_data_parser.parse_args()
 
     main(main_args, aug_args)
+   

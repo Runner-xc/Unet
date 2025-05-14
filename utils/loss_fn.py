@@ -7,7 +7,6 @@ import torch.nn as nn
 import numpy as np
 import os
 from monai.losses import DiceLoss, HausdorffDTLoss
-
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 
@@ -50,11 +49,9 @@ class CrossEntropyLoss():
         # 记录类别损失
         total_loss = torch.stack(list(loss_dict.values())).mean()
         loss_dict['total_loss'] = total_loss
-        
         return loss_dict
     
-class diceloss():
-    
+class diceloss():  
     def __init__(self, smooth=1e-5):
         """
         smooth: 平滑值
@@ -91,7 +88,7 @@ class diceloss():
         union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
         dice = (2 * intersection) / (union + self.smooth)
         loss = tensor_one - dice
-        total_loss = loss.sum() / num_classes
+        total_loss = loss.sum() / (num_classes-1.)
         
         # 计算每个类别的损失
         loss_dict = {}
@@ -99,9 +96,58 @@ class diceloss():
         loss_dict['Organic matter'] = loss[0]
         loss_dict['Organic pores'] = loss[1]
         loss_dict['Inorganic pores'] = loss[2]
-
         return loss_dict
 
+class CEDiceLoss(nn.Module):
+    def __init__(self, ce_weight=0.5, dice_weight=0.5, smooth=1e-5):
+        super(CEDiceLoss, self).__init__()
+        self.ce_weight = ce_weight
+        self.dice_weight = dice_weight
+        self.smooth = smooth
+        self.class_names = [
+            'Organic matter', 
+            'Organic pores', 
+            'Inorganic pores'
+        ]
+
+    def forward(self, logits, targets):
+        # CE Loss
+        ce = nn.CrossEntropyLoss(reduction='none')
+        ce_loss = ce(logits, targets)  # [b, h, w]
+        
+        # Dice Loss
+        num_classes = logits.shape[1]
+        targets_one_hot = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()
+        probs = torch.softmax(logits, dim=1)
+        
+        dice_losses = []
+        ce_losses = []
+        
+        for i in range(1, num_classes):  # 忽略背景
+            pred = probs[:, i, ...]
+            target = targets_one_hot[:, i, ...]
+            
+            # 计算类别的 CE Loss
+            class_ce = ce_loss[targets == i].mean()
+            ce_losses.append(class_ce)
+            
+            # 计算类别的 Dice Loss
+            intersection = (pred * target).sum()
+            union = pred.sum() + target.sum()
+            dice = (2.0 * intersection + self.smooth) / (union + self.smooth)
+            dice_losses.append(1.0 - dice)
+        
+        # 组合损失
+        loss_dict = {}
+        total_loss = 0
+        for i in range(num_classes-1):
+            class_loss = self.ce_weight * ce_losses[i] + self.dice_weight * dice_losses[i]
+            loss_dict[self.class_names[i]] = class_loss
+            total_loss += class_loss
+            
+        loss_dict['total_loss'] = total_loss / (num_classes-1)
+        return loss_dict
+    
 class IOULoss():
     def __init__(self, smooth=1e-5):
         """
@@ -221,7 +267,6 @@ class Focal_Loss():
             'Organic pores':1,
             'Inorganic pores':2
         }
-        self.num_classes = len(self.class_names)
 
     def __call__(self,logits, targets):
         """
@@ -235,7 +280,6 @@ class Focal_Loss():
         ce = nn.CrossEntropyLoss(label_smoothing=1e-7, reduction='none', ignore_index=0)    # 不进行缩减会返回（batch, h, w）的loss值
         
         # 计算 Focal Loss
-        # celoss期望的logits是(b, c, h, w), targets是(b, h, w)
         ce_loss = ce(logits, targets)  # [b, 256, 256]
         pt = torch.exp(-ce_loss)
         focal_loss = self.alpha * ((1 - pt) ** self.gamma) * ce_loss
@@ -244,19 +288,12 @@ class Focal_Loss():
         loss_dict = {}
         total_loss = 0
         names = ['Organic matter', 'Organic pores', 'Inorganic pores']
-        for i in range(1, self.num_classes+1):  # 从1开始，忽略背景
+        for i in range(1, num_classes):  # 从1开始，忽略背景
             class_loss = focal_loss[targets == i].mean()
             loss_dict[names[i-1]] = class_loss
             total_loss += class_loss
-        
-        # for i in range(1, num_classes):
-        #     target = targets[:, i, ...]
-        #        
-        #     pt = torch.exp(-ce_loss)
-        #     loss_dict[names[i-1]] = self.alpha * ((1-pt)**self.gamma) * ce_loss      
-
-        # 计算总损失
-        total_loss /= 3  # 减去背景类
+            
+        total_loss /= 3.  # 减去背景类
         loss_dict['total_loss'] = total_loss
 
         return loss_dict
@@ -374,15 +411,11 @@ class DWDLoss(nn.Module):
 
             
 
-# if __name__ == '__main__':
-#     loss_fn = TotalLoss(flag=True, loss_fn='boundary_loss')
-#     x = torch.randn(1, 4, 256, 256)
-#     y = torch.randint(0, 4, (1, 256, 256))
-#     x = F.softmax(x, dim=1)
-#     dice_loss = DiceLoss()
-#     boundary_loss = SurfaceLoss()
-#     focal_loss = Focal_Loss()
-#     distance_based_loss = DistanceBasedLoss()
-#     print(focal_loss(x, y))
-#     print(boundary_loss(x, y))
-#     print(dice_loss(x, y))
+if __name__ == '__main__':
+    x = torch.randn(8, 4, 256, 256)
+    y = torch.randint(0, 4, (8, 256, 256))
+    dice_loss = diceloss()
+    focal_loss = Focal_Loss()
+    a = focal_loss(x, y)
+    print(focal_loss(x, y))
+    # print(a)

@@ -11,7 +11,7 @@ from model.Segnet import SegNet
 from model.u2net import u2net_full_config, u2net_lite_config
 from model.unet import UNet, ResD_UNet
 from model.aicunet import AICUNet
-from model.a_unet import A_UNet
+from model.a_unet import *
 from model.m_unet import M_UNet
 from model.rdam_unet import *
 from model.vm_unet import VMUNet
@@ -58,9 +58,17 @@ def main(args):
             "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv2"                      : A_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv3"                      : A_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv4"                      : A_UNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv5"                      : A_UNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unetv6"                      : A_UNetV6(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "ma_unet"                       : MAUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "mamba_aunet"                   : Mamba_AUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "dwrdam_unetv2"                 : DWRDAM_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "dwrdam_unetv3"                 : DWRDAM_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
             "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
@@ -75,7 +83,7 @@ def main(args):
         raise ValueError(f"Invalid model name: {args.model}")
     
     # 加载模型权重
-    pretrain_weights = torch.load(args.weights_path, weights_only=False)
+    pretrain_weights = torch.load(args.weights_path, weights_only=True)
     if "model" in pretrain_weights:
         model.load_state_dict(pretrain_weights["model"])
     else:
@@ -120,6 +128,27 @@ def main(args):
                 os.mkdir(single_path)
             pred_img_pil.save(f"{single_path}/{args.model}.png")        
             print("预测完成!")
+        
+        # 泛化预测
+        img = "/mnt/e/VScode/WS-Hub/WS-UNet/UNet/Image1 - 027.jpeg"
+        img = Image.open(img).convert('RGB')
+        img = np.array(img)
+        img = torchvision.transforms.ToTensor()(img).to(device)
+        img = torchvision.transforms.Resize((1792, 2048))(img)
+        img = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))(img)
+        img = img.unsqueeze(0)
+        logits = model(img)
+        pred_mask = torch.argmax(logits, dim=1)
+        pred_mask = pred_mask.squeeze(0)
+        pred_mask = pred_mask.to(torch.uint8).cpu()
+        pred_mask_np = pred_mask.numpy()
+        pred_img_pil = Image.fromarray(pred_mask_np)
+        # 保存图片
+        test_path = "./GL_Test"
+        if not os.path.exists(test_path):
+            os.mkdir(test_path)
+        pred_img_pil.save(f"{test_path}/{args.model}_test.png")
+        print("泛化预测完成!")
        
     else:
         # test 多张
@@ -187,13 +216,13 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/test_shale_256.csv')
     parser.add_argument('--base_size',      type=int,       default=256 )
     parser.add_argument('--dropout_p',      type=int,       default=0   )
-    parser.add_argument('--model',          type=str,       default='Segnet',     help='aicunet, dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--model',          type=str,       default='mamba_aunet',     help='aicunet, dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/Segnet/L_DiceLoss--S_CosineAnnealingLR/optim_AdamW-lr_0.0001-wd_0.0001/2025-04-16_22-07-58/model_best_ep_20.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/mamba_aunet/DiceLoss-CosineAnnealingLR/AdamW-lr_0.0001-wd_0.0001/2025-05-13_17-19-48/model_best_ep_31.pth')
     
     parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/predict')
     parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/single_predict')
-    parser.add_argument('--single',         type=bool,      default=True,          help='test single img or not')
+    parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
     parser.add_argument('--slide',          type=bool,      default=False)
     
     args = parser.parse_args()
