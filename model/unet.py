@@ -15,7 +15,7 @@ class UNet(nn.Module):
         super(UNet, self).__init__()
         self.in_channels = in_channels
         self.n_classes = n_classes
-        self.dowm = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.down = nn.MaxPool2d(kernel_size=2, stride=2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         # 编码器
         self.encoder1 = DoubleConv(in_channels, base_channels)
@@ -43,19 +43,19 @@ class UNet(nn.Module):
         
     def forward(self, x):
         x1 = self.encoder1(x)               # [1, 32, 320, 320]
-        x2 = self.dowm(x1)
+        x2 = self.down(x1)
         x2 = self.encoder_dropout1(x2)
 
         x2 = self.encoder2(x2)              # [1, 64, 160, 160]
-        x3 = self.dowm(x2)
+        x3 = self.down(x2)
         x3 = self.encoder_dropout2(x3)
 
         x3 = self.encoder3(x3)              # [1, 128, 80, 80]
-        x4 = self.dowm(x3)
+        x4 = self.down(x3)
         x4 = self.encoder_dropout3(x4)
 
         x4 = self.encoder4(x4)              # [1, 256, 40, 40]
-        x5 = self.dowm(x4)
+        x5 = self.down(x4)
         x5 = self.encoder_dropout4(x5)
        
         x = self.center_conv(x5)            # [1, 256, 20, 20]
@@ -114,13 +114,39 @@ class ResD_UNet(UNet):
         
     def forward(self, x):      
         return super(ResD_UNet, self).forward(x)
+
+class AWUNet(UNet):
+    def __init__(self, 
+                 in_channels,
+                 n_classes,
+                 p, 
+                 base_channels=32,
+                 ):
+        super(AWUNet, self).__init__(
+            in_channels=in_channels,
+            n_classes=n_classes,
+            p=p,
+            base_channels=base_channels)
+        # 编码器
+        self.encoder1 = Att_AWConv(in_channels, base_channels)
+        self.encoder2 = Att_AWConv(base_channels, base_channels*2)
+        self.encoder3 = Att_AWConv(base_channels*2, base_channels*4)
+        self.encoder4 = Att_AWConv(base_channels*4, base_channels*8)
+
+        # 解码器
+        self.decoder1 = Att_AWConv(base_channels * 16 , base_channels * 4) 
+        self.decoder2 = Att_AWConv(base_channels * 8 ,  base_channels * 2)
+        self.decoder3 = Att_AWConv(base_channels * 4 ,  base_channels)
+        self.decoder4 = Att_AWConv(base_channels * 2,   base_channels)
+    def forward(self, x):
+        return super().forward(x)
     
             
 if __name__ == '__main__':
     from utils.attention import EMA
     from utils.modules import *
     from utils.model_info import calculate_computation     
-    model = ResD_UNet(in_channels=3, n_classes=4, p=0)
+    model = AWUNet(in_channels=3, n_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))
