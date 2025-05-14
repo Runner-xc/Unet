@@ -2,8 +2,37 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import os
+from mamba_ssm import Mamba
 
 """-------------------------------------------------Convolution----------------------------------------------"""
+import torch
+from torchvision.ops import DeformConv2d
+
+class DeformConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        # 定义偏移量生成网络（普通卷积层）
+        self.offset_conv = nn.Conv2d(
+            in_channels, 
+            2 * 3 * 3,  # 每个位置x/y偏移量 × 3x3卷积核采样点数
+            kernel_size=3, 
+            padding=1
+        )
+        
+        # 可变形卷积层
+        self.deform_conv = DeformConv2d(
+            in_channels, 
+            out_channels, 
+            kernel_size=3, 
+            padding=1
+        )
+    
+    def forward(self, x):
+        # 生成偏移量 [B, 18, H, W]
+        offsets = self.offset_conv(x)
+        
+        # 执行可变形卷积
+        return self.deform_conv(x, offsets)
 class DWConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=0, dilation=1):
         super(DWConv, self).__init__()
@@ -19,37 +48,91 @@ class DoubleConv(nn.Module):
         if mid_channels is None:
             mid_channels = out_channels // 4
         # 初始定义分离的各层
-        self.conv1 = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(mid_channels)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        
+
         self.cbr1 = nn.Sequential(
-            self.conv1, self.bn1, self.relu)
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1), 
+            nn.BatchNorm2d(mid_channels), 
+            self.relu)
         
         self.cbr2 = nn.Sequential(
-            self.conv2, self.bn2, self.relu)
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1), 
+            nn.BatchNorm2d(out_channels), 
+            self.relu)
         
     def forward(self, x):
         x = self.cbr1(x)  
         return self.cbr2(x)
 
+class Axis_wise_Conv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel=3):
+        super(Axis_wise_Conv2d, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, kernel_size=(1, kernel), padding=(0, kernel // 2), groups=in_channels),
+            nn.Conv2d(in_channels, in_channels, kernel_size=(kernel, 1), padding=(kernel // 2, 0), groups=in_channels))
+        self.pwconv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        return self.pwconv(self.conv(x))
+
+class AWConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel=3):
+        super(AWConv, self).__init__()
+        self.conv = nn.Sequential(
+            Axis_wise_Conv2d(in_channels, out_channels, kernel),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True))
+        
+    def forward(self, x):
+        return self.conv(x)
+    
+class Att_AWConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel=3):
+        super(Att_AWConv, self).__init__()
+        self.relu = nn.ReLU(inplace=True)
+
+        self.conv = nn.Sequential(
+            Axis_wise_Conv2d(in_channels, out_channels, kernel),
+            nn.BatchNorm2d(out_channels),
+            self.relu)
+        
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels // 2, kernel_size=1),
+            self.relu,
+            nn.Conv2d(out_channels // 2, out_channels, kernel_size=1))
+        self.sgm = nn.Sigmoid()
+        
+    def forward(self, x):
+        x = self.conv(x)
+        weight = self.sgm(self.fc(self.gap(x)))
+        return x * weight
+
+class Att_AWBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.awconv5x5 = AWConv(in_channels, out_channels, kernel=5)
+        self.se = SE_Block(out_channels)
+    def forward(self, x):
+        return self.se(self.awconv5x5(x))
+    
 class DWDoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super().__init__()
         if mid_channels is None:
             mid_channels = out_channels // 4
         # 调整顺序为 DWConv → BN → ReLU
+        self.relu = nn.ReLU(inplace=True)
+        
         self.dconv1 = nn.Sequential(
             DWConv(in_channels, mid_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(mid_channels),
-            nn.ReLU(inplace=True)
+            self.relu
         )
         self.dconv2 = nn.Sequential(
             DWConv(mid_channels, out_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
+            self.relu
         )
 
     def forward(self, x):
@@ -219,6 +302,32 @@ class DWResDConv(nn.Module):
         x = self.cbr3(x)
         x = x + re
         return self.relu(x)
+    
+class MambaLayer(nn.Module):
+    def __init__(self, dim, d_state = 16, d_conv = 4, expand = 2):
+        super().__init__()
+        self.dim = dim
+        self.norm = nn.LayerNorm(dim)
+        self.mamba = Mamba(
+                d_model=dim,      # Model dimension d_model
+                d_state=d_state,  # SSM state expansion factor
+                d_conv=d_conv,    # Local convolution width 1×1
+                expand=expand,    # Block expansion factor
+        )
+    
+    def forward(self, x):
+        if x.dtype == torch.float16:
+            x = x.type(torch.float32)
+        B, C = x.shape[:2]
+        assert C == self.dim
+        n_tokens = x.shape[2:].numel()
+        img_dims = x.shape[2:]
+        x_flat = x.reshape(B, C, n_tokens).transpose(-1, -2)
+        x_norm = self.norm(x_flat)
+        x_mamba = self.mamba(x_norm)
+        out = x_mamba.transpose(-1, -2).reshape(B, C, *img_dims)
+
+        return out
     
 """---------------------------------------------Pyramid Pooling Module----------------------------------------------------"""
 class STEFunction(torch.autograd.Function):
@@ -533,18 +642,141 @@ class AMSFNV2(AMSFN):  #Adaptive Convolutional Pooling Network (ACPN)
             nn.BatchNorm2d(in_channels),
             nn.ReLU(inplace=True))
 
-        # self.final_conv = nn.Sequential(
-        #     nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-        #     nn.BatchNorm2d(out_channels),
-        #     nn.ReLU(inplace=True))
-
     def forward(self, x):
         return super(AMSFNV2, self).forward(x)
 
+class SpatialChannelAttention(nn.Module):
+    def __init__(self, in_ch):
+        super().__init__()
+        if in_ch % 4 != 0:
+            out_ch = 1
+        else:
+            out_ch = in_ch // 4
+        # 通道注意力
+        self.channel_att = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(in_ch, out_ch, 1),
+            nn.ReLU(),
+            nn.Conv2d(out_ch, in_ch, 1),
+            nn.Sigmoid()
+        )
+        # 空间注意力
+        self.spatial_att = nn.Sequential(
+            nn.Conv2d(in_ch, 1, 3, padding=1),
+            nn.Sigmoid()
+        )
+    
+    def forward(self, x):
+        channel_weight = self.channel_att(x)  # [B,C,1,1]
+        spatial_weight = self.spatial_att(x)  # [B,1,H,W]
+        return x * channel_weight * spatial_weight  # 双重注意力
+class AMSFNV3(nn.Module):
+    def __init__(self, in_channels, out_channels=None):
+        super().__init__()
+        if out_channels is None:
+            out_channels = in_channels
+        
+        # 分支1: 1x1卷积保留细节
+        self.branch1 = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, 1),
+            SpatialChannelAttention(in_channels)
+        )
+        
+        # 分支2: 轴向卷积
+        self.branch2 = AWConv(in_channels, in_channels, kernel=5)
+        
+        # 分支3: 可变形卷积适应形状
+        self.branch3 = nn.Sequential(
+            DeformConvBlock(in_channels, in_channels),
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU()
+        )
+        
+        # 动态融合权重生成
+        self.fusion_weights = nn.Conv2d(in_channels*3, 3, 3, padding=1)  # 空间敏感权重
+        
+        # 输出变换
+        self.final = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU()
+        )
+
+    def forward(self, x):
+        # 多流并行计算 提高训练速度
+        s1, s2, s3 = torch.cuda.Stream(), torch.cuda.Stream(), torch.cuda.Stream()
+        
+        with torch.cuda.stream(s1):
+            b1 = self.branch1(x)
+        with torch.cuda.stream(s2):
+            b2 = self.branch2(x)
+        with torch.cuda.stream(s3):
+            b3 = self.branch3(x)
+        torch.cuda.synchronize()
+
+        b1 = self.branch1(x)
+        b2 = self.branch2(x)
+        b3 = self.branch3(x)
+        
+        # 生成空间注意力权重
+        weight_map = torch.softmax(self.fusion_weights(torch.cat([b1, b2, b3], dim=1)), dim=1)
+        w1, w2, w3 = weight_map.chunk(3, dim=1)
+        
+        # 加权融合
+        fused = w1*b1 + w2*b2 + w3*b3
+        return self.final(fused)
+
+class AMSFNV4(AMSFNV3):
+    def __init__(self, in_channels, out_channels=None):
+        super().__init__(
+            in_channels, out_channels
+        )
+        if out_channels is None:
+            out_channels = in_channels
+        
+        # 分支2: 轴向卷积
+        self.branch2 = Att_AWConv(in_channels, in_channels, kernel=5)
+        
+        # 动态融合权重生成
+        self.fusion_weights = nn.Sequential(
+            nn.Conv2d(in_channels*3,3,3, padding=1, groups=3),
+            nn.Conv2d(3,3,1)
+        )
+        
+        # 输出变换
+        self.final = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU()
+        )
+    def forward(self, x):
+        # 多流并行计算 提高训练速度
+        s1, s2, s3 = torch.cuda.Stream(), torch.cuda.Stream(), torch.cuda.Stream()
+        
+        with torch.cuda.stream(s1):
+            b1 = self.branch1(x)
+        with torch.cuda.stream(s2):
+            b2 = self.branch2(x)
+        with torch.cuda.stream(s3):
+            b3 = self.branch3(x)
+        torch.cuda.synchronize()
+
+        b1 = self.branch1(x)
+        b2 = self.branch2(x)
+        b3 = self.branch3(x)
+        
+        # 生成空间注意力权重
+        weight_map = torch.softmax(self.fusion_weights(torch.cat([b1, b2, b3], dim=1)), dim=1)
+        w1, w2, w3 = weight_map.chunk(3, dim=1)
+        
+        # 加权融合
+        fused = w1*b1 + w2*b2 + w3*b3
+        return self.final(fused)
+
 if __name__ == '__main__':
     from attention import *
-    x = torch.randn(16, 3, 256, 256)
-    model = AMSFN(3, 4)
+    x = torch.randn(16, 3, 256, 256).to('cuda')
+    model = MambaLayer(dim=3, d_state=64, d_conv=4).to('cuda')
     out = model(x)
     print(out.shape, "\n",
           model)
