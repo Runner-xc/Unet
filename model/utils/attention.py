@@ -270,7 +270,68 @@ class DynamicAttention(nn.Module):
         attention = torch.softmax(torch.einsum("ijk, ikl -> ijl",Q, K)/(C1**0.5), dim=-1)
         out = torch.bmm(V, attention.permute(0,2,1)).view(batch, C, H, W)
         return self.gamma * out + x
-    
+""""----------------------------------------------------Att_gate-----------------------------------------------------"""
+class Att_gate(nn.Module):
+    def __init__(self, F_g, F_l, F_int):
+        super(Att_gate, self).__init__()
+        self.W_g = nn.Sequential(
+            nn.Conv2d(F_g, F_int, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(F_int)
+        )
+
+        self.W_x = nn.Sequential(
+            nn.Conv2d(F_l, F_int, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(F_int)
+        )
+
+        self.psi = nn.Sequential(
+            nn.Conv2d(F_int, 1, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(1),
+            nn.Sigmoid()
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, g, x):
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+        psi = self.relu(g1 + x1)
+        # channel 减为1，并Sigmoid,得到权重矩阵
+        psi = self.psi(psi)
+        return x * psi
+
+class Att_gateV2(nn.Module):
+    def __init__(self, F_g, F_l, num_classes):
+        super(Att_gateV2, self).__init__()
+        self.num_classes = num_classes
+        self.W_g = nn.Sequential(
+            nn.Conv2d(F_g, num_classes, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(num_classes)
+        )
+
+        self.W_x = nn.Sequential(
+            nn.Conv2d(F_l, num_classes, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(num_classes)
+        )
+
+        self.psi = nn.Sequential(
+            nn.Conv2d(num_classes, 1, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(1),
+            nn.Sigmoid()
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, g, x):
+        # 可导部分
+        g1 = self.W_g(g)  # [B, C, H, W] 
+        x1 = self.W_x(x)  # [B, F_int, H, W]
+        
+        # 合并特征
+        psi = self.relu(g1 + x1)
+        psi = self.psi(psi)  # [B, 1, H, W]
+        return x * psi
+
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

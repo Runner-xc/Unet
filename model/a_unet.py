@@ -228,30 +228,112 @@ class A_UNetV5(A_UNetV4):
     def forward(self, x):
         return super().forward(x)
 
-class A_UNetV6(A_UNetV5):
+class A_UNetV6(A_UNetV4):
     def __init__(self, in_channels, n_classes, p, base_channels=32):
         super(A_UNetV6, self).__init__(in_channels, n_classes, p, base_channels)
-        self.center_conv = Att_AWBlock(base_channels*8, base_channels*8)
+        self.center_conv = nn.Sequential(
+            nn.Conv2d(base_channels*8, base_channels*8, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(base_channels*8),
+            nn.ReLU(inplace=True),
+            Att_AWBlock(base_channels*8, base_channels*8))
 
     def forward(self, x):
         return super().forward(x)
 
-class Mamba_AUNet(A_UNetV6):
+class Mamba_AUNet(A_UNetV4):
     def __init__(self, in_channels, n_classes, p, base_channels=32):
         super(Mamba_AUNet, self).__init__(in_channels, n_classes, p, base_channels)
         # bottleneck使用MambaLayer
         self.center_conv = nn.Sequential(
-            Att_AWBlock(base_channels*8, base_channels*8),
-            MambaLayer(dim=base_channels*8, d_state=64, d_conv=4)
-          )
+            nn.Conv2d(base_channels*8,base_channels*4, kernel_size=1),
+            MambaLayer(dim=base_channels*4, d_state=128, d_conv=8),
+            nn.Conv2d(base_channels*4,base_channels*8, kernel_size=1))
+      
+    def forward(self, x):
+        return super().forward(x)
+class Mamba_AUNetV3(A_UNetV4):
+    def __init__(self, in_channels, n_classes, p, base_channels=32):
+        super(Mamba_AUNetV3, self).__init__(in_channels, n_classes, p, base_channels)
+        # bottleneck使用MambaLayer
+        self.center_conv = nn.Sequential(
+            nn.Conv2d(base_channels*8,base_channels*2, kernel_size=1),
+            MambaLayer(dim=base_channels*2, d_state=128, d_conv=8),
+            nn.Conv2d(base_channels*2,base_channels*8, kernel_size=1))
+      
+    def forward(self, x):
+        return super().forward(x)
+    
+class Mamba_AUNetV4(A_UNetV4):
+    def __init__(self, in_channels, n_classes, p, base_channels=32):
+        super(Mamba_AUNetV4, self).__init__(in_channels, n_classes, p, base_channels)
+        # bottleneck使用MambaLayer
+        self.center_conv = nn.Sequential(
+            nn.Conv2d(base_channels*8,base_channels*4, kernel_size=1),
+            MambaLayer(dim=base_channels*4, d_state=48, d_conv=8),
+            nn.Conv2d(base_channels*4,base_channels*8, kernel_size=1))
+      
     def forward(self, x):
         return super().forward(x)
 
+class Mamba_AUNetV5(A_UNetV4):
+    def __init__(self, in_channels, n_classes, p, base_channels=32):
+        super(Mamba_AUNetV5, self).__init__(in_channels, n_classes, p, base_channels)
+        # bottleneck使用MambaLayer
+        self.center_conv = nn.Sequential(
+            nn.Conv2d(base_channels*8,base_channels*4, kernel_size=1),
+            MambaLayer(dim=base_channels*4, d_state=256, d_conv=8),
+            nn.Conv2d(base_channels*4,base_channels*8, kernel_size=1))
+      
+    def forward(self, x):
+        return super().forward(x)
+
+class Mamba_AUNetV2(Mamba_AUNet):
+    def __init__(self, in_channels, n_classes, p, base_channels=32):
+        super(Mamba_AUNetV2, self).__init__(in_channels, n_classes, p, base_channels)
+        
+    def forward(self, x):
+        x1 = self.encoder1(x)               # [1, 32, 320, 320]
+        x2 = self.down(x1)
+        x2 = self.encoder_dropout1(x2)
+
+        x2 = self.encoder2(x2)              # [1, 64, 160, 160]
+        x3 = self.down(x2)
+        x3 = self.encoder_dropout2(x3)
+
+        x3 = self.encoder3(x3)              # [1, 128, 80, 80]
+        x4 = self.down(x3)
+        x4 = self.encoder_dropout3(x4)
+
+        x4 = self.encoder4(x4)              # [1, 256, 40, 40]
+        x5 = self.encoder_dropout4(x4)
+       
+        x = self.center_conv(x5)            # [1, 256, 20, 20]
+        x = self.bottleneck_dropout(x)
+        
+        x = torch.cat([x, x4], dim=1)       # [1, 256+256, 40, 40]
+        x = self.decoder1(x)                # [1, 128, 40, 40]
+        x = self.decoder_dropout1(x)
+
+        x = self.up(x)                      # [1, 128, 80, 80]
+        x = torch.cat([x, x3], dim=1)       # [1, 128+128, 80, 80]
+        x = self.decoder2(x)                # [1, 64, 80, 80]
+        x = self.decoder_dropout2(x)
+
+        x = self.up(x)                      # [1, 64, 160, 160]
+        x = torch.cat([x, x2], dim=1)       # [1, 64+64, 160, 160]
+        x = self.decoder3(x)                # [1, 32, 160, 160]
+
+        x = self.up(x)                      # [1, 32, 160, 160]
+        x = torch.cat([x, x1], dim=1)       # [1, 32+32, 320, 320]
+        x = self.decoder4(x)                # [1, 32, 320, 320]
+        
+        logits = self.out_conv(x)           # [1, c, 320, 320]       
+        return logits 
 if __name__ == '__main__':
     from utils.attention import EMA
     from utils.modules import *
     from utils.model_info import calculate_computation     
-    model = Mamba_AUNet(in_channels=3, n_classes=4, p=0)
+    model = Mamba_AUNetV5(in_channels=3, n_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))
