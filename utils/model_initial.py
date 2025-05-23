@@ -20,9 +20,8 @@ def kaiming_initial(model, init_gain=0.02):
             if m.bias is not None:
                 init.constant_(m.bias, 0)
 
-
 # 正交初始化
-def orthogonal_initial(model):
+def orthogonal_initial(model, init_gain=0.02):
     for m in model.modules():
         if isinstance(m, nn.Conv3d):
             nn.init.orthogonal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -34,7 +33,7 @@ def orthogonal_initial(model):
             nn.init.constant_(m.bias, 0)
 
 # xavier初始化
-def xavier_initial(model):
+def xavier_initial(model, init_gain=0.02):
     for m in model.modules():
         if isinstance(m, nn.Conv3d):
             nn.init.xavier_uniform_(m.weight, mode='fan_out', nonlinearity='relu')

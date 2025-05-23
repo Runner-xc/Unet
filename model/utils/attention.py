@@ -240,7 +240,8 @@ class SE_Block(nn.Module):
             nn.Linear(inchannel // ratio, inchannel, bias=False),  # 从 c/r -> c
             nn.Sigmoid()
         )
- 
+        self._initialize_weights()  
+
     def forward(self, x):
             # 读取批数据图片数量及通道数
             b, c, h, w = x.size()
@@ -251,6 +252,23 @@ class SE_Block(nn.Module):
             # Fscale操作：将得到的权重乘以原来的特征图x
             return x * y.expand_as(x)
     
+    def _initialize_weights(self, init_gain=0.02):
+        """
+        初始化权重。
+        """
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, init_gain)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+    
 """"----------------------------------------------------DAtt-----------------------------------------------------"""  
 class DynamicAttention(nn.Module):
     def __init__(self, in_channels):
@@ -259,7 +277,8 @@ class DynamicAttention(nn.Module):
         self.key = nn.Conv2d(in_channels, in_channels//8, 1)
         self.value = nn.Conv2d(in_channels, in_channels, 1)
         self.gamma = nn.Parameter(torch.zeros(1))
-
+        self._initialize_weights()
+        
     def forward(self, x):
         batch, C, H, W = x.size()
         Q = self.query(x).view(batch, -1, H*W).permute(0,2,1)  # [B, N, C']
@@ -270,6 +289,23 @@ class DynamicAttention(nn.Module):
         attention = torch.softmax(torch.einsum("ijk, ikl -> ijl",Q, K)/(C1**0.5), dim=-1)
         out = torch.bmm(V, attention.permute(0,2,1)).view(batch, C, H, W)
         return self.gamma * out + x
+    
+    def _initialize_weights(self, init_gain=0.02):
+        """
+        初始化权重。
+        """
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, init_gain)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 """"----------------------------------------------------Att_gate-----------------------------------------------------"""
 class Att_gate(nn.Module):
     def __init__(self, F_g, F_l, F_int):
@@ -291,6 +327,7 @@ class Att_gate(nn.Module):
         )
 
         self.relu = nn.ReLU(inplace=True)
+        self._initialize_weights()
 
     def forward(self, g, x):
         g1 = self.W_g(g)
@@ -299,7 +336,23 @@ class Att_gate(nn.Module):
         # channel 减为1，并Sigmoid,得到权重矩阵
         psi = self.psi(psi)
         return x * psi
-
+    
+    def _initialize_weights(self, init_gain=0.02):
+        """
+        初始化权重。
+        """
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, init_gain)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 class Att_gateV2(nn.Module):
     def __init__(self, F_g, F_l, num_classes):
         super(Att_gateV2, self).__init__()
@@ -321,6 +374,24 @@ class Att_gateV2(nn.Module):
         )
 
         self.relu = nn.ReLU(inplace=True)
+        self._initialize_weights()
+
+    def _initialize_weights(self, init_gain=0.02):
+        """
+        初始化权重。
+        """
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, init_gain)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, g, x):
         # 可导部分
@@ -331,6 +402,8 @@ class Att_gateV2(nn.Module):
         psi = self.relu(g1 + x1)
         psi = self.psi(psi)  # [B, 1, H, W]
         return x * psi
+    
+    
 
 if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
