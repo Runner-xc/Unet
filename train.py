@@ -535,7 +535,7 @@ def main(args):
             current_lr = scheduler.get_last_lr()[0]  
 
             # 评价指标 metrics = [recall, precision, dice, f1_score]
-            val_metrics                 ={}
+            val_metrics                 = {}
             val_metrics["Loss"]         = average_val_losses
             val_metrics["Recall"]       = Metric_list[0]
             val_metrics["Precision"]    = Metric_list[1]

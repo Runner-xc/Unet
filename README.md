@@ -9,7 +9,7 @@
 ### UNet
 <div align="center">
 
-![alt text](images/UNet.png)
+![alt text](assets/UNet.png)
 
 </div>
 
