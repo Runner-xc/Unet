@@ -12,3 +12,5 @@ tabulate
 grad-cam
 monai
 h5py
+kaggle
+rich

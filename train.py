@@ -17,7 +17,8 @@ from typing import Union, List, Dict
 from torchinfo import summary
 import swanlab
 import yaml
-
+from rich.console import Console
+color = Console()
 # 预处理
 class SODPresetTrain:
     def __init__(self, base_size: Union[int, List[int]], crop_size: int,
@@ -90,7 +91,7 @@ def check_initialization(
     overall_status = True
     
     if verbose:
-        print("\n=== 参数初始化检查 ===")
+        color.print("\n=== 参数初始化检查 ===")
     
     for name, param in model.named_parameters():
         param_data = param.detach().cpu()
@@ -135,21 +136,21 @@ def check_initialization(
         
         if verbose:
             status = "✅" if is_valid else "❌"
-            print(f"{name} ({layer_type}): {status} 均值={mean:.4f}, 标准差={std:.4f}, 范围=[{min_val:.4f}, {max_val:.4f}]")
+            color.print(f"{name} ({layer_type}): {status} 均值={mean:.4f}, 标准差={std:.4f}, 范围=[{min_val:.4f}, {max_val:.4f}]")
             if has_nan:
-                print(f"  ⚠️ 包含NaN值")
+                color.print(f"  ⚠️ 包含NaN值")
             if has_inf:
-                print(f"  ⚠️ 包含无穷大值")
+                color.print(f"  ⚠️ 包含无穷大值")
             if not range_valid:
-                print(f"  ⚠️ 参数范围超出阈值 [-{threshold}, {threshold}]")
+                color.print(f"  ⚠️ 参数范围超出阈值 [-{threshold}, {threshold}]")
             if layer_specific_issues:
-                print(f"  ⚠️ {'；'.join(layer_specific_issues)}")
+                color.print(f"  ⚠️ {'；'.join(layer_specific_issues)}")
         
         overall_status = overall_status and is_valid
     
     if verbose:
-        print("\n=== 初始化整体评估 ===")
-        print(f"状态: {'✅ 合理' if overall_status else '❌ 存在问题'}")
+        color.print("\n=== 初始化整体评估 ===")
+        color.print(f"状态: {'✅ 合理' if overall_status else '❌ 存在问题'}")
     
     return results
 
@@ -196,14 +197,14 @@ def main(args):
     }
 
     # 筛选需要打印的参数
-    printed_params = list(param_map.keys())
+    color.printed_params = list(param_map.keys())
     params_dict = {}
-    params_dict['Parameter'] = [param_map[p] for p in printed_params]
-    params_dict['Value'] = [str(params[p]) for p in printed_params if p in params]
+    params_dict['Parameter'] = [param_map[p] for p in color.printed_params]
+    params_dict['Value'] = [str(params[p]) for p in color.printed_params if p in params]
 
     # 打印参数
     params_header = ['Parameter', 'Value']
-    # print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
+    # color.print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
     
     """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
     initial_time = time.time()
@@ -377,7 +378,7 @@ def main(args):
                                       min_lr=0, 
                                       eps=1e-8)
     else:
-        print(f"wrong scaler name{args.scheduler}")
+        color.print(f"wrong scaler name[red]{args.scheduler}[/red]")
         
     # 损失函数 
     loss_map = {
@@ -430,8 +431,8 @@ def main(args):
     else:
         mdf_args_log_name = f"{args.optimizer}-lr_{args.lr}-wd_{args.wd}_{detailed_time_str}.md"
     params = vars(args)
-    params_dict['Parameter'] = printed_params
-    params_dict['Value'] = [str(params[p]) for p in printed_params]
+    params_dict['Parameter'] = color.printed_params
+    params_dict['Value'] = [str(params[p]) for p in color.printed_params]
     contents = tabulate(params_dict, headers=params_header, tablefmt="grid")
 
     mdf = os.path.join(save_modification_path, mdf_args_log_name)
@@ -447,7 +448,7 @@ def main(args):
     params_dict['Value'] = [str(p[1]) for p in list(params.items())]
     params_header = ['Parameter', 'Value']
     """打印参数"""
-    print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
+    color.print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
             
     """——————————————————————————————————————————————训练 验证——————————————————————————————————————————————"""
     start_epoch = args.start_epoch
@@ -470,13 +471,13 @@ def main(args):
         best_mean_loss = checkpoint['best_mean_loss']
         start_epoch = checkpoint['best_epoch']
         best_epoch = checkpoint['best_epoch']
-        print(f"🌐Resume from epoch: {start_epoch}")
+        color.print(f"🌐Resume from epoch: [blue]{start_epoch}[/blue]")
     
     """训练"""   
     for epoch in range(start_epoch, end_epoch):
         
-        print(f"\n ✈️»»——————————————««  Epoch {epoch+1}/{end_epoch}  »»——————————————««✈️\n")
-        print(f"🌈 ---- Training ---- 🌈")
+        color.print(f"\n ✈️»»——————————————««  Epoch {epoch+1}/{end_epoch}  »»——————————————««✈️\n")
+        color.print(f"🌈 ---- Training ---- 🌈")
         # 记录时间
         start_time = time.time()
         # 训练
@@ -514,14 +515,14 @@ def main(args):
 
         # 打印
         for loss, name in zip(average_train_losses ,loss_names):
-            print(f"💧train_{name}_loss: {loss:.3f}")
-        print(f"⏳train_cost_time: {train_cost_time:.2f}s")
+            color.print(f"💧train_{name}_loss: [yellow]{loss:.3f}[/yellow]")
+        color.print(f"⏳train_cost_time: [white]{train_cost_time:.2f}[/white]s")
         
 
         """验证"""
         if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
-            print("\n\n")
-            print(f"🌈 ---- Validation ---- 🌈")
+            color.print("\n\n")
+            color.print(f"🌈 ---- Validation ---- 🌈")
             # 记录验证开始时间
             start_time = time.time()
             # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
@@ -548,11 +549,10 @@ def main(args):
             val_cost_time = end_time - start_time
 
             # 打印结果
-            
             for loss, name in zip(average_val_losses ,loss_names):
-                print(f"🔥val_{name}_loss: {loss:.3f}")
-            print(f"🕒val_cost_time: {val_cost_time:.2f}s")
-            print(f"🚀Current learning rate: {current_lr:.7f}")
+                color.print(f"🔥val_{name}_loss: [blue]{loss:.3f}[/blue]")
+            color.print(f"🕒val_cost_time: [white]{val_cost_time:.2f}[/white]s")
+            color.print(f"🚀Current learning rate: [green]{current_lr:.7f}[/green]")
             
             # 记录日志
             tb = args.tb
@@ -631,7 +631,7 @@ def main(args):
                 training_info
             )
 
-            print(write_info)
+            color.print(write_info)
 
             # 保存结果
             runing_logs_path = f'{args.training_results_path}/{args.runing_logs}/{args.model}/{args.loss_fn}-{args.scheduler}'
@@ -669,14 +669,14 @@ def main(args):
             # 保存当前最佳模型的权重
             best_model_path = f"{weights_path}/model_best_ep_{best_epoch}.pth"
             torch.save(save_file, best_model_path)
-            print(f"✨Best model saved at epoch: {best_epoch} ✨with mean loss: {best_mean_loss}")
+            color.print(f"✨Best model saved at epoch: {best_epoch} ✨with mean loss: {best_mean_loss}")
             
             # 删除之前保存的所有包含"model_best"的文件
             path_list = os.listdir(weights_path)
             for i in path_list:
                 if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
                     os.remove(os.path.join(weights_path, i))
-                    print(f"✅remove last best weight:{i}")                         
+                    color.print(f"✅[yellow]remove last best weight[yellow]:[red]{i}[/red]")                         
 
             # # 保存最后三个epoch权重
             # if os.path.exists(f"{weights_path}/model_ep_{epoch-3}.pth"):
@@ -695,13 +695,13 @@ def main(args):
     
         # 早停判断
         if patience >= 30:    
-            print('恭喜你触发早停！！')
+            color.print('恭喜你触发早停！！')
             break
 
     writer.close()
     total_time = time.time() - initial_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print("✅training over. ⏳total time: {}".format(total_time_str))
+    color.print("✅training over. ⏳total time: {}".format(total_time_str))
         
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
