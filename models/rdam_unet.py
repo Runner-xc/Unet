@@ -403,9 +403,7 @@ class MAUNet(DWRDAM_UNet):
         return super().forward(x)
     
 if __name__ == "__main__":
-    from utils.attention import *
-    from utils.modules import *   
-    from utils.model_info import calculate_computation
+    from utils import * 
     model1 = DWRDAM_UNetV4(in_channels=3, n_classes=4, p=0)
     # model2 = RDAM_UNet(in_channels=3, n_classes=4, p=0)
     # x = torch.randn(1, 3, 256, 256)
@@ -427,6 +425,4 @@ if __name__ == "__main__":
     # ========================================
 
 else:
-    from model.utils.attention import *
-    from model.utils.modules import *
-    from model.utils.model_info import calculate_computation
+    from models.utils import *

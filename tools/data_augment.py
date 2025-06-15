@@ -141,8 +141,11 @@ class ShaleAugmentor:
     
     def random_rotate(self, image, mask):
         """随机旋转"""
-        angle = np.random.choice([0, 90, 180, 270]) if np.random.rand() < 0.3 \
-               else np.random.uniform(-30, 30)
+        if self.config['random_rotate']['angle_std'] != 0:
+            angle = np.random.choice([0, 90, 180, 270]) if np.random.rand() < 0.3 \
+                else np.random.uniform(-self.config['random_rotate']['angle_std'], self.config['random_rotate']['angle_std'])
+        else:
+            angle = np.random.choice([0, 90, 180, 270])
         
         h, w = image.shape[:2]
         center = (w//2, h//2)
@@ -230,35 +233,34 @@ def aug_data_processing(root_path, size="256", aug_times=60, data_csv=None, data
         }
     
     train_aug_config = {
-                    "sobel": {"threshhold" : 110, "p": 0.2},
-                    "unsharp_mask": {"p": 0.3, "sigma": 1.0, "strength": 0.5},  
-                    "morphology": {"kernel_size": 5, "p": 0.3},
-                    "histogram_equalization": {"p": 0.05},
-                    "noise": {"gaussian_p": 0.5, "sp_p": 0.05, "gaussian_sigma": 15},
-                    "random_erase": {"p": 0.4, "erase_area_ratio": 0.05},
-                    "random_rotate": {"p": 0.5},
+                    "sobel": {"threshhold": 100, "p": 0.2},
+                    "unsharp_mask": {"p": 0.3, "sigma": 1.0, "strength": 0.4},
+                    "morphology": {"kernel_size": 3, "p": 0.25},
+                    "histogram_equalization": {"p": 0.03},
+                    "noise": {"gaussian_p": 0.25, "sp_p": 0, "gaussian_sigma": 8},
+                    "random_erase": {"p": 0.2, "erase_area_ratio": 0.03},
+                    "random_rotate": {"p": 0.7, "angle_std": 20}
                 }
     
     val_aug_config = {
                     "sobel": {"p": 0},
                     "unsharp_mask": {"p": 0},  
-                    "morphology": {"kernel_size": 3, "p": 0.3},
-                    "histogram_equalization": {"p": 0.02},
-                    "noise": {"gaussian_p": 0.2, "sp_p": 0.1, "gaussian_sigma": 15},
-                    "random_erase": {"p": 0.2, "erase_area_ratio": 0.01},
-                    "random_rotate": {"p": 0.5},
+                    "morphology": {"kernel_size": 3, "p": 0.05},
+                    "histogram_equalization": {"p": 0},
+                    "noise": {"gaussian_p": 0.15, "sp_p": 0.0, "gaussian_sigma": 5},
+                    "random_erase": {"p": 0},
+                    "random_rotate": {"p": 0.5, "angle_std": 10},
                 }
     
     test_aug_config = {
                     "sobel": {"p": 0},
-                    "random_rotate": {"p": 0.5},
+                    "random_rotate": {"p": 1, "angle_std": 0},
                     "unsharp_mask": {"p": 0},
                     "morphology": {"p": 0},
                     "histogram_equalization": {"p": 0},
-                    "noise": {"gaussian_p": 0},
+                    "noise": {"gaussian_p": 0.1, "sp_p": 0, "gaussian_sigma": 5},
                     "random_erase": {"p": 0}
                 }
-    
 
     # 初始化数据集增强器
     train_augmentor = ShaleAugmentor(train_aug_config)

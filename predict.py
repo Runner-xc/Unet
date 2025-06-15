@@ -2,29 +2,15 @@ import torch
 from PIL import Image
 import torchvision
 from torch.utils.data import DataLoader, Dataset
-from utils.rock_data import SEM_DATA
+from tools import *
 import argparse
 import time
-from model.deeplabv3 import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
-from model.pspnet import PSPNet
-from model.Segnet import SegNet
-from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import UNet, ResD_UNet, AWUNet
-from model.aicunet import AICUNet
-from model.a_unet import *
-from model.m_unet import M_UNet
-from model.rdam_unet import *
-from model.vm_unet import VMUNet
+from models import *
 from tqdm import tqdm
 from tabulate import tabulate
-from utils.train_and_eval import *
-from utils.model_initial import *
-from utils.loss_fn import *
-from utils.metrics import Metrics
-import utils.transforms as T
+import tools.transforms as T
 from torchvision import transforms 
 from typing import Union, List
-from utils.slide_predict import SlidingWindowPredictor
 
 class SODPresetEval:
     def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
@@ -56,6 +42,8 @@ def main(args):
             "u2net_full"                    : u2net_full_config(),
             "u2net_lite"                    : u2net_lite_config(),
             "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "att_unet"                      : Attention_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "unet++"                        : UnetPlusPlus(in_channels=3, num_classes=4, base_channel=32, deep_supervision=False), 
             "aw_unet"                       : AWUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
@@ -69,6 +57,10 @@ def main(args):
             "mamba_aunet"                   : Mamba_AUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "mamba_aunetv2"                 : Mamba_AUNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "mamba_aunetv3"                 : Mamba_AUNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "mamba_aunetv4"                 : Mamba_AUNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "mamba_aunetv5"                 : Mamba_AUNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "ds_dw_unet"                    : DeepSV_DW_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "dwrdam_unetv2"                 : DWRDAM_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
@@ -94,7 +86,7 @@ def main(args):
         
     model = model.to(device)
     model.eval()
-    metric = Metrics()
+    metric = Metrics(args.class_names)
 
     # 创建优化后的预测器
     predictor = SlidingWindowPredictor(
@@ -196,14 +188,13 @@ def main(args):
         val_metrics["mIoU"] = Metric_list[4]
         val_metrics["Accuracy"] = Metric_list[5]
         metrics_dict = {scores : val_metrics[scores] for scores in metrics_table_left}
-        metrics_table = [[metric_name,
-                            metrics_dict[metric_name][-1],
-                            metrics_dict[metric_name][0],
-                            metrics_dict[metric_name][1],
-                            metrics_dict[metric_name][2]
-                        ]
-                            for metric_name in metrics_table_left
-                        ]
+        metrics_table = [
+            [name,  
+            f"{metrics_dict[name][-1]:.5f}" ,  # 平均
+            *[f"{metrics_dict[name][i]:.5f}" for i in range(len(args.class_names))],
+            ]   
+            for name in metrics_table_left
+        ]
         table_s = tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid')
         write_info = f"{args.model}" + "\n" + table_s
         file_path = f'{save_path}/scores/{t}.txt'
@@ -216,15 +207,15 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/test_shale_256.csv')
+    parser.add_argument('--data_path',      type=str,       default='./datasets/CSV/test_shale_256.csv')
     parser.add_argument('--base_size',      type=int,       default=256 )
     parser.add_argument('--dropout_p',      type=int,       default=0   )
-    parser.add_argument('--model',          type=str,       default='mamba_aunet',     help='aicunet, dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--model',          type=str,       default='mamba_aunetv5',     help='aicunet, att_unet, dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/mamba_aunet/DiceLoss-CosineAnnealingLR/AdamW-lr_0.0001-wd_0.0001/2025-05-20_13-56-11/model_best_ep_28.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/mamba_aunetv5/DiceLoss-CosineAnnealingLR/AdamW-lr_0.0008-l1_0.0001-l2_0.0001/2025-06-12_10-49-02/model_best_ep_43.pth')
     
-    parser.add_argument('--save_path',      type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/predict')
-    parser.add_argument('--single_path',    type=str,       default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/single_predict')
+    parser.add_argument('--save_path',      type=str,       default='./predict')
+    parser.add_argument('--single_path',    type=str,       default='./predict_single')
     parser.add_argument('--single',         type=bool,      default=False,          help='test single img or not')
     parser.add_argument('--slide',          type=bool,      default=False)
     parser.add_argument('--class_names',        type=list,

@@ -227,4 +227,4 @@ if __name__ == '__main__':
     # print(output.shape)
 
 else:
-    from model.utils.modules import DoubleConv
+    from models.utils.modules import DoubleConv

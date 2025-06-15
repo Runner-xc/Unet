@@ -221,12 +221,30 @@ class A_UNetV4(A_UNetV3):
 
     def forward(self, x):
         return super().forward(x)
+    
+    def elastic_net(self, l1_lambda, l2_lambda):
+        l1_loss = 0
+        l2_loss = 0
+        for param in self.parameters():
+            l1_loss += torch.abs(param).sum()
+            l2_loss += torch.pow(param, 2).sum()
+        return l1_lambda * l1_loss + l2_lambda * l2_loss
+    
 class A_UNetV5(A_UNetV4):
     def __init__(self, in_channels, n_classes, p, base_channels=32):
         super(A_UNetV5, self).__init__(in_channels, n_classes, p, base_channels)
         self.center_conv = Att_AWConv(base_channels*8, base_channels*8)
     def forward(self, x):
         return super().forward(x)
+    
+    def elastic_net(self, l1_lambda, l2_lambda):
+        l1_loss = 0
+        l2_loss = 0
+        for param in self.parameters():
+            l1_loss += torch.abs(param).sum()
+            l2_loss += torch.pow(param, 2).sum()
+            
+        return l1_lambda * l1_loss + l2_lambda * l2_loss
 
 class A_UNetV6(A_UNetV4):
     def __init__(self, in_channels, n_classes, p, base_channels=32):
@@ -239,6 +257,15 @@ class A_UNetV6(A_UNetV4):
 
     def forward(self, x):
         return super().forward(x)
+    
+    def elastic_net(self, l1_lambda, l2_lambda):
+        l1_loss = 0
+        l2_loss = 0
+        for param in self.parameters():
+            l1_loss += torch.abs(param).sum()
+            l2_loss += torch.pow(param, 2).sum()
+            
+        return l1_lambda * l1_loss + l2_lambda * l2_loss
 
 class Mamba_AUNet(A_UNetV4):
     def __init__(self, in_channels, n_classes, p, base_channels=32):
@@ -286,10 +313,42 @@ class Mamba_AUNetV5(A_UNetV4):
       
     def forward(self, x):
         return super().forward(x)
+    
+    def elastic_net(self, l1_lambda, l2_lambda):
+        l1_loss = 0
+        l2_loss = 0
+        for param in self.parameters():
+            l1_loss += torch.abs(param).sum()
+            l2_loss += torch.pow(param, 2).sum()
+        return l1_lambda * l1_loss + l2_lambda * l2_loss
+    
+class Mamba_AUNetV6(A_UNetV4):
+    def __init__(self, in_channels, n_classes, p, base_channels=32):
+        super(Mamba_AUNetV6, self).__init__(in_channels, n_classes, p, base_channels)
+        # 调整MambaLayer参数
+        self.center_conv = nn.Sequential(
+            nn.Conv2d(base_channels*8, base_channels*4, kernel_size=1),
+            MambaLayer(dim=base_channels*4, d_state=256, d_conv=16),
+            nn.Conv2d(base_channels*4, base_channels*8, kernel_size=1))
+
+    def forward(self, x):
+        return super().forward(x)
+    
+    def elastic_net(self, l1_lambda, l2_lambda):
+        l1_loss = 0
+        l2_loss = 0
+        for param in self.parameters():
+            l1_loss += torch.abs(param).sum()
+            l2_loss += torch.pow(param, 2).sum()
+        return l1_lambda * l1_loss + l2_lambda * l2_loss
 
 class Mamba_AUNetV2(Mamba_AUNet):
     def __init__(self, in_channels, n_classes, p, base_channels=32):
         super(Mamba_AUNetV2, self).__init__(in_channels, n_classes, p, base_channels)
+        self.center_conv = nn.Sequential(
+            nn.Conv2d(base_channels*8,base_channels*2, kernel_size=1),
+            MambaLayer(dim=base_channels*2, d_state=64, d_conv=8),
+            nn.Conv2d(base_channels*2,base_channels*8, kernel_size=1))
         
     def forward(self, x):
         x1 = self.encoder1(x)               # [1, 32, 320, 320]
@@ -330,10 +389,8 @@ class Mamba_AUNetV2(Mamba_AUNet):
         logits = self.out_conv(x)           # [1, c, 320, 320]       
         return logits 
 if __name__ == '__main__':
-    from utils.attention import EMA
-    from utils.modules import *
-    from utils.model_info import calculate_computation     
-    model = Mamba_AUNetV5(in_channels=3, n_classes=4, p=0)
+    from utils import *    
+    model = A_UNetV4(in_channels=3, n_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))
@@ -346,6 +403,4 @@ if __name__ == '__main__':
     # ========================================
 
 else:
-    from model.utils.attention import *
-    from model.utils.modules import * 
-    from model.utils.model_info import calculate_computation 
+    from models.utils import *

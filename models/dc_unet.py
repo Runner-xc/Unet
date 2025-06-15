@@ -198,5 +198,5 @@ if __name__ == '__main__':
     # Params: 4.82 M
     # ========================================
 else:
-    from model.utils.model_info import calculate_computation
-    from model.utils.modules import DoubleConv
+    from models.utils.model_info import calculate_computation
+    from models.utils.modules import DoubleConv

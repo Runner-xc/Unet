@@ -27,54 +27,45 @@ class DeformConvBlock(nn.Module):
             kernel_size=3, 
             padding=1
         )
-        self._initialize_weights()
+        
     def forward(self, x):
         # 生成偏移量 [B, 18, H, W]
         offsets = self.offset_conv(x)
         # 执行可变形卷积
         return self.deform_conv(x, offsets)
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+
 class DWConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=0, dilation=1):
         super(DWConv, self).__init__()
         self.dconv = nn.Conv2d(in_channels, in_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=in_channels, dilation=dilation)
         self.pconv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self._initialize_weights()
 
     def forward(self, x):
         return self.pconv(self.dconv(x))
+
+class Att_DWConv(nn.Module):
+    def __init__(self, in_channels, out_channels, mid_channel=None, kernel_size=3):
+        super(Att_DWConv, self).__init__()
+        if mid_channel is None and in_channels != 3:
+            mid_channel = in_channels // 2
+        else: 
+            mid_channel = in_channels
+        self.dconv1 = nn.Conv2d(in_channels, in_channels, kernel_size=kernel_size, padding=kernel_size//2, groups=in_channels)
+        self.pconv1 = nn.Conv2d(in_channels, mid_channel, kernel_size=1)
+        self.relu = nn.ReLU(inplace=True)
+        self.bn1 = nn.BatchNorm2d(mid_channel)
+
+        self.dconv2 = nn.Conv2d(mid_channel, mid_channel, kernel_size=kernel_size, padding=kernel_size//2, groups=mid_channel)
+        self.pconv2 = nn.Conv2d(mid_channel, out_channels, kernel_size=1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        self.se = SE_Block(out_channels)
+        
+
+    def forward(self, x):
+        x = self.bn1(self.relu(self.pconv1(self.dconv1(x))))
+        return self.bn2(self.relu(self.pconv2(self.dconv2(x))))
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super().__init__()
@@ -92,28 +83,11 @@ class DoubleConv(nn.Module):
             nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1), 
             nn.BatchNorm2d(out_channels), 
             self.relu)
-        self._initialize_weights()
         
     def forward(self, x):
         x = self.cbr1(x)  
         return self.cbr2(x)
 
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class Axis_wise_Conv2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel=3):
         super(Axis_wise_Conv2d, self).__init__()
@@ -121,27 +95,9 @@ class Axis_wise_Conv2d(nn.Module):
             nn.Conv2d(in_channels, in_channels, kernel_size=(1, kernel), padding=(0, kernel // 2), groups=in_channels),
             nn.Conv2d(in_channels, in_channels, kernel_size=(kernel, 1), padding=(kernel // 2, 0), groups=in_channels))
         self.pwconv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-        self._initialize_weights()
 
     def forward(self, x):
         return self.pwconv(self.conv(x))
-
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 
 class AWConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel=3):
@@ -150,27 +106,11 @@ class AWConv(nn.Module):
             Axis_wise_Conv2d(in_channels, out_channels, kernel),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True))
-        self._initialize_weights()
+        
         
     def forward(self, x):
         return self.conv(x)
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class Att_AWConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel=3):
         super(Att_AWConv, self).__init__()
@@ -187,53 +127,21 @@ class Att_AWConv(nn.Module):
             self.relu,
             nn.Conv2d(out_channels // 2, out_channels, kernel_size=1))
         self.sgm = nn.Sigmoid()
-        self._initialize_weights()
         
     def forward(self, x):
         x = self.conv(x)
         weight = self.sgm(self.fc(self.gap(x)))
         return x * weight
-    
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+                    
 class Att_AWBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.awconv5x5 = AWConv(in_channels, out_channels, kernel=5)
         self.se = SE_Block(out_channels)
-        self._initialize_weights()
+        
     def forward(self, x):
         return self.se(self.awconv5x5(x))
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+    
 class DWDoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super().__init__()
@@ -252,27 +160,10 @@ class DWDoubleConv(nn.Module):
             nn.BatchNorm2d(out_channels),
             self.relu
         )   
-        self._initialize_weights()
 
     def forward(self, x):
         return self.dconv2(self.dconv1(x))
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class Conv_3(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super(Conv_3, self).__init__()
@@ -289,27 +180,11 @@ class Conv_3(nn.Module):
         self.c3 = nn.Sequential(nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1), 
                                 nn.BatchNorm2d(out_channels), 
                                 nn.ReLU(inplace=True))
-        self._initialize_weights()
+        
 
     def forward(self, x1):
         return self.c3(self.c2(self.cbr1(x1)))
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 
 class Dalit_Conv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
@@ -327,27 +202,11 @@ class Dalit_Conv(nn.Module):
         self.cbr3 = nn.Sequential(nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=3, dilation=3), 
                                   nn.BatchNorm2d(out_channels),
                                   nn.ReLU(inplace=True))
-        self._initialize_weights()
+        
 
     def forward(self, x):
         return self.cbr3(self.cbr2(self.cbr1(x)))
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class DWDalit_Conv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super(DWDalit_Conv, self).__init__()
@@ -364,27 +223,11 @@ class DWDalit_Conv(nn.Module):
         self.cbr3 = nn.Sequential(DWConv(mid_channels, out_channels, kernel_size=3, stride=1, padding=3, dilation=3), 
                                 nn.BatchNorm2d(out_channels), 
                                 nn.ReLU(inplace=True))
-        self._initialize_weights()
+        
 
     def forward(self, x):
         return self.cbr3(self.cbr2(self.cbr1(x)))
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class ResConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ResConv, self).__init__()
@@ -398,7 +241,7 @@ class ResConv(nn.Module):
         
         self.c3 = nn.Sequential(nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1), 
                                 nn.BatchNorm2d(out_channels))
-        self._initialize_weights()        
+                
     def forward(self, x):
         residual = x
         re = self.c1(residual)
@@ -407,22 +250,6 @@ class ResConv(nn.Module):
         x = x + re
         return self.relu(x)
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class ResDConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super(ResDConv, self).__init__()
@@ -443,7 +270,7 @@ class ResDConv(nn.Module):
         
         self.cbr3 = nn.Sequential(nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=3, dilation=3), 
                                   nn.BatchNorm2d(out_channels))
-        self._initialize_weights()
+        
     def forward(self, x):
         residual = x
         re = self.c1(residual)
@@ -453,22 +280,6 @@ class ResDConv(nn.Module):
         x = x + re
         return self.relu(x)
     
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 class DWResConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DWResConv, self).__init__()
@@ -482,7 +293,7 @@ class DWResConv(nn.Module):
                                   nn.ReLU(inplace=True))
         self.cbr3 = nn.Sequential(DWConv(out_channels, out_channels, kernel_size=3, padding=1), 
                                   nn.BatchNorm2d(out_channels))
-        self._initialize_weights()      
+              
     def forward(self, x):
         residual = x
         re = self.cbr1(residual)
@@ -490,24 +301,6 @@ class DWResConv(nn.Module):
         x = self.cbr3(x)
         x = x + re
         return self.relu(x)
-    
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-
 class DWResDConv(nn.Module):
     def __init__(self, in_channels, out_channels, mid_channels=None):
         super(DWResDConv, self).__init__()
@@ -528,7 +321,7 @@ class DWResDConv(nn.Module):
         
         self.cbr3 = nn.Sequential(DWConv(mid_channels, out_channels, kernel_size=3, padding=3, dilation=3), 
                                   nn.BatchNorm2d(out_channels))
-        self._initialize_weights()
+        
     def forward(self, x):
         residual = x
         re = self.c1(residual)
@@ -537,24 +330,6 @@ class DWResDConv(nn.Module):
         x = self.cbr3(x)
         x = x + re
         return self.relu(x)
-    
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-    
 class MambaLayer(nn.Module):
     def __init__(self, dim, d_state = 16, d_conv = 4, expand = 2):
         super().__init__()
@@ -566,7 +341,7 @@ class MambaLayer(nn.Module):
                 d_conv=d_conv,    # Local convolution width 1×1
                 expand=expand,    # Block expansion factor
         )
-        self._initialize_weights()
+        
     
     def forward(self, x):
         if x.dtype == torch.float16:
@@ -580,19 +355,6 @@ class MambaLayer(nn.Module):
         x_mamba = self.mamba(x_norm)
         out = x_mamba.transpose(-1, -2).reshape(B, C, *img_dims)
         return out
-    
-    def _initialize_weights(self):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.LayerNorm):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
     
 """---------------------------------------------Pyramid Pooling Module----------------------------------------------------"""
 class STEFunction(torch.autograd.Function):
@@ -839,7 +601,7 @@ class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
             nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True))
-        self._initialize_weights()
+        
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -868,23 +630,6 @@ class AMSFN(nn.Module):  #Adaptive Convolutional Pooling Network (ACPN)
         output = c1_weighted + c2_weighted + c3_weighted + c4_weighted
         output = self.final_conv(output)
         return output
-    
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
     
 class AMSFNV2(AMSFN):  #Adaptive Convolutional Pooling Network (ACPN)
     def __init__(self, in_channels, out_channels=None, mid_channels=None,):
@@ -948,13 +693,13 @@ class SpatialChannelAttention(nn.Module):
             nn.Conv2d(in_ch, 1, 3, padding=1),
             nn.Sigmoid()
         )
-    
+          
     def forward(self, x):
         channel_weight = self.channel_att(x)  # [B,C,1,1]
         spatial_weight = self.spatial_att(x)  # [B,1,H,W]
         return x * channel_weight * spatial_weight  # 双重注意力
 class AMSFNV3(nn.Module):
-    def __init__(self, in_channels, out_channels=None):
+    def __init__(self, in_channels, out_channels=None, k=5):
         super().__init__()
         if out_channels is None:
             out_channels = in_channels
@@ -966,7 +711,7 @@ class AMSFNV3(nn.Module):
         )
         
         # 分支2: 轴向卷积
-        self.branch2 = AWConv(in_channels, in_channels, kernel=5)
+        self.branch2 = AWConv(in_channels, in_channels, kernel=k)
         
         # 分支3: 可变形卷积适应形状
         self.branch3 = nn.Sequential(
@@ -984,7 +729,7 @@ class AMSFNV3(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.ReLU()
         )
-        self._initialize_weights()
+        
 
     def forward(self, x):
         # 多流并行计算 提高训练速度
@@ -1009,34 +754,17 @@ class AMSFNV3(nn.Module):
         # 加权融合
         fused = w1*b1 + w2*b2 + w3*b3
         return self.final(fused)
-    
-    def _initialize_weights(self, init_gain=0.02):
-        """
-        初始化权重。
-        """
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, init_gain)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 
 class AMSFNV4(AMSFNV3):
-    def __init__(self, in_channels, out_channels=None):
+    def __init__(self, in_channels, out_channels=None, k=5):
         super().__init__(
-            in_channels, out_channels
+            in_channels, out_channels, k
         )
         if out_channels is None:
             out_channels = in_channels
         
         # 分支2: 轴向卷积
-        self.branch2 = Att_AWConv(in_channels, in_channels, kernel=5)
+        self.branch2 = Att_AWConv(in_channels, in_channels, kernel=k)
         
         # 动态融合权重生成
         self.fusion_weights = nn.Sequential(
@@ -1077,7 +805,8 @@ class AMSFNV4(AMSFNV3):
 if __name__ == '__main__':
     from attention import *
     x = torch.randn(16, 3, 256, 256).to('cuda')
-    model = MambaLayer(dim=3, d_state=64, d_conv=4).to('cuda')
+    # model = MambaLayer(dim=3, d_state=64, d_conv=4).to('cuda')
+    model = Att_DWConv(in_channels=3, out_channels=3, kernel_size=3, padding=1).to('cuda')
     out = model(x)
     print(out.shape, "\n",
           model)
@@ -1086,7 +815,7 @@ elif os.path.dirname(os.path.abspath(__file__)) == '/mnt/e/VScode/WS-Hub/WS-UNet
     from .attention import *
 
 else:
-    from model.utils.attention import *
+    from models.utils.attention import *
 
         
      

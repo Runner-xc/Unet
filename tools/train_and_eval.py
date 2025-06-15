@@ -59,9 +59,6 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
     Metric_list = np.zeros((6, len(class_names)+1))
     train_dataloader = tqdm(train_dataloader, desc=f" Training on Epoch :{epoch + 1}😀", leave=False)
     epoch_losses = [0.0] * len(class_names+ ['total'])  # 加上总损失
-
-    # 使用 tqdm 包装 train_dataloader
-    train_dataloader = tqdm(train_dataloader, desc=f" Training on Epoch :{epoch + 1}😀", leave=False)
     
     for data in train_dataloader: 
         # 获取训练数据集的一个batch
@@ -78,10 +75,10 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
             # U2Net
             if isinstance(pred, list):
                 total_loss = _total_loss(pred, masks, loss_fn)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
-                # if elnloss:
-                #     # 添加Elastic Net正则化
-                #     elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
-                #     train_mean_loss = train_mean_loss + elastic_net_loss
+                if elnloss:
+                    # 添加Elastic Net正则化
+                    elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
+                    total_loss = total_loss + elastic_net_loss
                 metrics = Metric.update(pred, masks)
                 Metric_list += metrics
             
@@ -100,12 +97,20 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
                     # 计算总损失：主分支损失*0.6 + 辅助分支损失*0.4
                     losses = [m_loss*0.6 + a_loss*0.4 for m_loss, a_loss in zip(main_losses, aux_losses)]
                     total_loss = losses[-1]
+                    if elnloss:
+                        # 添加Elastic Net正则化
+                        elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
+                        total_loss = total_loss + elastic_net_loss
                     metrics = Metric.update(heatmap, masks)
                     Metric_list += metrics
             else:
                 loss_dict = loss_fn(pred, masks)
                 class_names, losses = loss_dict.keys(), loss_dict.values()
                 total_loss = loss_dict['total_loss']
+                if elnloss:
+                    # 添加Elastic Net正则化
+                    elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
+                    total_loss = total_loss + elastic_net_loss
                 metrics = Metric.update(pred, masks)
                 Metric_list += metrics
 
@@ -135,9 +140,9 @@ def evaluate(model, device, data_loader, loss_fn, Metric, class_names, test:bool
     """
     model.eval()
     if test:
-        Metric_list = np.zeros((6, 9))
+        Metric_list = np.zeros((6, len(class_names)+1))
     else:
-        Metric_list = np.zeros((6, 9))
+        Metric_list = np.zeros((6, len(class_names)+1))
     epoch_losses = [0.0] * len(class_names+['total'])  # 加上总损失
 
     with torch.no_grad():

@@ -1,41 +1,22 @@
 import torch
 import datetime
 from torch.utils.data import DataLoader, Dataset
-from utils.rock_data import SEM_DATA
-from utils import data_split
-from utils.writing_logs import writing_logs
+from tools import *
 import argparse
 import os
 from torch.optim import Adam, SGD, RMSprop, AdamW
 import time
-from model.deeplabv3 import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
-from model.pspnet import PSPNet
-from model.Segnet import SegNet
-from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import *
-from model.aicunet import AICUNet
-from model.a_unet import *
-from model.m_unet import *
-from model.rdam_unet import *
-from model.vm_unet import VMUNet
-from model.dc_unet import DC_UNet
+from models import *
 from tabulate import tabulate
-from utils.train_and_eval import *
-from utils.model_initial import *
-from utils import param_modification
-from utils import write_experiment_log
-from utils.loss_fn import *
-from utils.metrics import Metrics
 from torch.utils.tensorboard import SummaryWriter
-import utils.transforms as T
+import tools.transforms as T
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from torch.optim.lr_scheduler import LambdaLR
 import math
-from typing import Union, List
-from utils.run_tensorboard import run_tensorboard
-from model.Segnet import SegNet
+from typing import Union, List, Dict
 from torchinfo import summary
 import swanlab
+import yaml
 
 # 预处理
 class SODPresetTrain:
@@ -91,8 +72,103 @@ def build_params_block(args):
         f"{PARAM_ICONS['loss_fn']} loss_fn : {args.loss_fn}\n"
         f"{PARAM_ICONS['scheduler']} scheduler : {args.scheduler}\n"        
                 )
+def check_initialization(
+    model: nn.Module,
+    threshold: float = 10.0,
+    verbose: bool = True
+) -> Dict[str, Dict]:
+    """
+    Args:
+        model: 待检测的PyTorch模型
+        threshold: 判断参数范围是否异常的阈值
+        verbose: 是否打印详细信息
+    
+    Returns:
+        包含各检测项结果的字典
+    """
+    results = {"parameters": {}}
+    overall_status = True
+    
+    if verbose:
+        print("\n=== 参数初始化检查 ===")
+    
+    for name, param in model.named_parameters():
+        param_data = param.detach().cpu()
+        
+        # 基础统计
+        min_val = param_data.min().item()
+        max_val = param_data.max().item()
+        mean = param_data.mean().item()
+        std = param_data.std().item()
+        
+        # 检查NaN和Inf
+        has_nan = torch.isnan(param_data).any().item()
+        has_inf = torch.isinf(param_data).any().item()
+        
+        # 判断参数范围是否合理
+        range_valid = (-threshold <= min_val <= max_val <= threshold)
+        
+        # 针对不同层类型的特殊检查
+        layer_type = type(model.get_submodule(name.split('.')[0])).__name__
+        layer_specific_issues = []
+        
+        if layer_type == 'BatchNorm2d':
+            if 'weight' in name and abs(1.0 - mean) > 0.1:
+                layer_specific_issues.append("BatchNorm权重均值应接近1")
+            if 'bias' in name and abs(mean) > 0.1:
+                layer_specific_issues.append("BatchNorm偏置均值应接近0")
+        
+        is_valid = not (has_nan or has_inf) and range_valid and not layer_specific_issues
+        
+        # 记录结果
+        results["parameters"][name] = {
+            "min": min_val,
+            "max": max_val,
+            "mean": mean,
+            "std": std,
+            "has_nan": has_nan,
+            "has_inf": has_inf,
+            "range_valid": range_valid,
+            "layer_specific_issues": layer_specific_issues,
+            "is_valid": is_valid
+        }
+        
+        if verbose:
+            status = "✅" if is_valid else "❌"
+            print(f"{name} ({layer_type}): {status} 均值={mean:.4f}, 标准差={std:.4f}, 范围=[{min_val:.4f}, {max_val:.4f}]")
+            if has_nan:
+                print(f"  ⚠️ 包含NaN值")
+            if has_inf:
+                print(f"  ⚠️ 包含无穷大值")
+            if not range_valid:
+                print(f"  ⚠️ 参数范围超出阈值 [-{threshold}, {threshold}]")
+            if layer_specific_issues:
+                print(f"  ⚠️ {'；'.join(layer_specific_issues)}")
+        
+        overall_status = overall_status and is_valid
+    
+    if verbose:
+        print("\n=== 初始化整体评估 ===")
+        print(f"状态: {'✅ 合理' if overall_status else '❌ 存在问题'}")
+    
+    return results
 
-def main(args, aug_args):
+def load_yaml_config(yaml_path):
+    with open(yaml_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+def update_args_with_yaml(args, yaml_path):
+    config = load_yaml_config(yaml_path)
+    for key, value in config.items():
+        setattr(args, key, value)
+    return args
+
+def main(args):
+    """——————————————————————————————————————————————加载yaml配置———————————————————————————————————————————————"""
+    if args.config_yaml:
+        args = update_args_with_yaml(args, args.config_yaml)
+
     """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
     # 将args转换为字典
     params = vars(args)
@@ -131,12 +207,12 @@ def main(args, aug_args):
     
     """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
     initial_time = time.time()
-    if args.change_params:    
+    if args.mdf_params:    
         x = input("是否需要修改配置参数：\n 0. 不修改, 继续。 \n\
 请输入需要修改的参数序号（int）： ")
         
         args = param_modification.param_modification(args, x)
-    save_modification_path = f"{args.results_path}/{args.modification}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
+    save_modification_path = f"{args.training_results_path}/{args.modification}/{args.model}/{args.loss_fn}-{args.scheduler}"
 
     """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
     # 定义设备
@@ -152,12 +228,10 @@ def main(args, aug_args):
                                                                                    num_small_data = args.num_small_data, 
                                                                                    # train_ratio=0.8, 
                                                                                    # val_ratio=0.1, 
-                                                                                   save_root_path = args.data_root_path,
                                                                                    flag           = args.split_flag) 
     
     else:
-        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(aug_args, args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
-                            save_root_path=args.data_root_path,   # 保存划分好的数据集路径
+        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args, args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
                             flag=args.split_flag)
 
     train_ratio = args.train_ratio
@@ -193,9 +267,10 @@ def main(args, aug_args):
             "att_unet"                      : Attention_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "aw_unet"                       : AWUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "unetpulsplus"                  : UnetPlusPlus(in_channels=3, num_classes=4, base_channel=32, deep_supervision=False),   
 
             # a_unet
-            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,    p=args.dropout_p),
             "a_unetv2"                      : A_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "a_unetv3"                      : A_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "a_unetv4"                      : A_UNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
@@ -208,12 +283,15 @@ def main(args, aug_args):
             "m_unetv3"                      : M_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),   
 
             "ma_unet"                       : MAUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "ds_dw_unet"                    : DeepSV_DW_UNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
+            "ds_dw_unetv2"                  : DeepSV_DW_UNetV2(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
 
             # mamba
             "mamba_aunet"                   : Mamba_AUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "mamba_aunetv2"                 : Mamba_AUNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "mamba_aunetv3"                 : Mamba_AUNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             "mamba_aunetv4"                 : Mamba_AUNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
+            "mamba_aunetv5"                 : Mamba_AUNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
             
             # rdam_unet
             "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
@@ -238,8 +316,9 @@ def main(args, aug_args):
         raise ValueError(f"Invalid model name: {args.model}")
     
     # 初始化模型
-    kaiming_initial(model)
+    model.apply(init_weights_2d)
     model.to(device)
+    check_initialization(model)
     model_info = str(summary(model, (1, 3, 256, 256)))  
     
     """——————————————————————————————————————————————优化器 调度器——————————————————————————————————————————————"""
@@ -303,7 +382,8 @@ def main(args, aug_args):
     # 损失函数 
     loss_map = {
             'CrossEntropyLoss'  : CrossEntropyLoss(args.class_names),
-            'DiceLoss'          : diceloss(args.class_names),
+            'DiceLoss'          : Diceloss(args.class_names),
+            'DS_Dice'           : DS_Diceloss(args.class_names),
             'FocalLoss'         : Focal_Loss(args.class_names),
             'WDiceLoss'         : WDiceLoss(args.class_names),
             'DWDLoss'           : DWDLoss(args.class_names),
@@ -318,23 +398,22 @@ def main(args, aug_args):
     metrics = Metrics(args.class_names)
     
     # 日志保存路径
-    save_logs_path = f"{args.results_path}/{args.log_name}/{args.model}/L_{args.loss_fn}--S_{args.scheduler}"
-    
-    if not os.path.exists(save_logs_path):
-        os.makedirs(save_logs_path)
+    save_logs_path = f"{args.training_results_path}/{args.tb_logs}/{args.model}/{args.loss_fn}-{args.scheduler}"
     if args.save_flag:
         if args.elnloss:
-            log_path = f'{save_logs_path}/optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}'
+            log_path = f'{save_logs_path}_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}'
+            os.makedirs(log_path, exist_ok=True)
             writer = SummaryWriter(log_path)
         else:
-            log_path = f'{save_logs_path}/optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}'
+            log_path = f'{save_logs_path}_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}'
+            os.makedirs(log_path, exist_ok=True)
             writer = SummaryWriter(log_path)
         
         # 转换参数为字典并过滤需要记录的参数
         config = vars(args)
-        excluded_params = ['data_path', 'data_root_path', 'save_scores','results_path', 
-                         'save_weight', 'log_name', 'modification',
-                         'device', 'resume', 'save_flag', 'split_flag', 'change_params']
+        excluded_params = ['data_path', 'runing_logs','training_results_path', 
+                         'weight', 'tb_logs', 'modification',
+                         'device', 'resume', 'save_flag', 'split_flag', 'mdf_params']
         config = {k: v for k, v in config.items() if k not in excluded_params}
         
         # 初始化SwanLab（整个训练过程只初始化一次）
@@ -347,15 +426,15 @@ def main(args, aug_args):
     """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
     # 记录修改后的参数
     if args.elnloss:
-        modification_log_name = f"optim_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.md"
+        mdf_args_log_name = f"{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}_{detailed_time_str}.md"
     else:
-        modification_log_name = f"optim_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.md"
+        mdf_args_log_name = f"{args.optimizer}-lr_{args.lr}-wd_{args.wd}_{detailed_time_str}.md"
     params = vars(args)
     params_dict['Parameter'] = printed_params
     params_dict['Value'] = [str(params[p]) for p in printed_params]
     contents = tabulate(params_dict, headers=params_header, tablefmt="grid")
 
-    mdf = os.path.join(save_modification_path, modification_log_name)
+    mdf = os.path.join(save_modification_path, mdf_args_log_name)
     if not os.path.exists(os.path.dirname(mdf)):
         os.makedirs(os.path.dirname(mdf))
     if args.save_flag:
@@ -527,15 +606,8 @@ def main(args, aug_args):
             metrics_dict = {name: val_metrics[name] for name in metrics_table_left}
             metrics_table = [
                 [name,  
-                f"{metrics_dict[name][-1]:.5f}",  # 平均
-                f"{metrics_dict[name][0]:.5f}",   # Aorta
-                f"{metrics_dict[name][1]:.5f}",   # Gallbladder
-                f"{metrics_dict[name][2]:.5f}",   # Left_Kidney
-                f"{metrics_dict[name][3]:.5f}",   # Right_Kidney
-                f"{metrics_dict[name][4]:.5f}",   # Liver
-                f"{metrics_dict[name][5]:.5f}",   # Pancreas
-                f"{metrics_dict[name][6]:.5f}",   # Spleen
-                f"{metrics_dict[name][7]:.5f}",   # Stomach
+                f"{metrics_dict[name][-1]:.5f}" ,  # 平均
+                *[f"{metrics_dict[name][i]:.5f}" for i in range(len(args.class_names))],
                 ]   
                 for name in metrics_table_left
             ]
@@ -562,12 +634,12 @@ def main(args, aug_args):
             print(write_info)
 
             # 保存结果
-            save_scores_path = f'{args.results_path}/{args.save_scores}/{args.model}/{args.loss_fn}-{args.scheduler}'
+            runing_logs_path = f'{args.training_results_path}/{args.runing_logs}/{args.model}/{args.loss_fn}-{args.scheduler}'
             if args.elnloss:
-                results_file = f"{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}.txt"
+                results_file = f"{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}_{detailed_time_str}.txt"
             else:
-                results_file = f"{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}.txt"
-            file_path = os.path.join(save_scores_path, results_file)
+                results_file = f"{args.optimizer}-lr_{args.lr}-wd_{args.wd}_{detailed_time_str}.txt"
+            file_path = os.path.join(runing_logs_path, results_file)
 
             if not os.path.exists(os.path.dirname(file_path)):
                 os.makedirs(os.path.dirname(file_path))
@@ -578,16 +650,16 @@ def main(args, aug_args):
         if args.save_flag:
             # 保存best模型
             if args.elnloss:
-                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
+                weights_path = f"{args.training_results_path}/{args.weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
             else:
-                save_weights_path = f"{args.results_path}/{args.save_weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
+                weights_path = f"{args.training_results_path}/{args.weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
                 
-            if not os.path.exists(save_weights_path):
-                os.makedirs(save_weights_path)
+            if not os.path.exists(weights_path):
+                os.makedirs(weights_path)
 
             save_file = {"model"        : model.state_dict(),
                         "optimizer"     : optimizer.state_dict(),
-                        "Metrics"       : Metrics.state_dict(),
+                        "Metrics"       : metrics.state_dict(),
                         "scheduler"     : scheduler.state_dict(),
                         "best_mean_loss": best_mean_loss,
                         "best_epoch"    : best_epoch,
@@ -595,24 +667,24 @@ def main(args, aug_args):
                         "model_info"    : model_info}
             
             # 保存当前最佳模型的权重
-            best_model_path = f"{save_weights_path}/model_best_ep_{best_epoch}.pth"
+            best_model_path = f"{weights_path}/model_best_ep_{best_epoch}.pth"
             torch.save(save_file, best_model_path)
             print(f"✨Best model saved at epoch: {best_epoch} ✨with mean loss: {best_mean_loss}")
             
             # 删除之前保存的所有包含"model_best"的文件
-            path_list = os.listdir(save_weights_path)
+            path_list = os.listdir(weights_path)
             for i in path_list:
                 if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
-                    os.remove(os.path.join(save_weights_path, i))
+                    os.remove(os.path.join(weights_path, i))
                     print(f"✅remove last best weight:{i}")                         
 
             # # 保存最后三个epoch权重
-            # if os.path.exists(f"{save_weights_path}/model_ep_{epoch-3}.pth"):
-            #     os.remove(f"{save_weights_path}/model_ep_{epoch-3}.pth")
+            # if os.path.exists(f"{weights_path}/model_ep_{epoch-3}.pth"):
+            #     os.remove(f"{weights_path}/model_ep_{epoch-3}.pth")
                 
-            # if not os.path.exists(save_weights_path):
-            #     os.makedirs(save_weights_path)
-            # torch.save(save_file, f"{save_weights_path}/model_ep_{epoch}.pth") 
+            # if not os.path.exists(weights_path):
+            #     os.makedirs(weights_path)
+            # torch.save(save_file, f"{weights_path}/model_ep_{epoch}.pth") 
         
         # 记录验证loss是否出现上升       
         if val_total_loss <= current_mean_loss:
@@ -633,40 +705,36 @@ def main(args, aug_args):
         
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
-    
     # 保存路径
     parser.add_argument('--data_path',          type=str, 
-                        default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets/CSV/shale_256.csv", 
+                        default="./datasets/CSV/shale_256.csv", 
                         help="path to csv dataset")
     
-    parser.add_argument('--data_root_path',  type=str,
-                        default="/root/projects/WS-UNet/UNet/datasets/CSV")
-    
     # results
-    parser.add_argument('--results_path',   type=str, 
-                        default='/root/projects/WS-UNet/UNet/results')
+    parser.add_argument('--training_results_path',   type=str, 
+                        default='./training_results')
     
-    parser.add_argument('--save_scores',   type=str, 
-                        default='save_scores')
+    parser.add_argument('--runing_logs',   type=str, 
+                        default='runing_logs')
     
-    parser.add_argument('--save_weight',   type=str,
-                        default="save_weights")
+    parser.add_argument('--weight',   type=str,
+                        default="weights")
     
-    parser.add_argument('--log_name',  type=str,
-                        default="logs")
+    parser.add_argument('--tb_logs',  type=str,
+                        default="tb_logs")
     
     parser.add_argument('--modification', type=str,
-                        default="modification_log")
+                        default="mdf_args_log")
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="att_unet", 
-                        help=" unet, ResD_unet, att_unet, rdam_unet, ma_unet, mamba_aunet, a_unet, m_unet, aw_unet, aicunet, dwrdam_unetv2\
+                        default="unetpulsplus", 
+                        help=" unet, ResD_unet, unetpulsplus, att_unet, ds_dw_unet, rdam_unet, ma_unet, mamba_aunet, a_unet, m_unet, aw_unet, aicunet, dwrdam_unetv2\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
     parser.add_argument('--loss_fn',            type=str, 
                         default='DiceLoss', 
-                        help="'CrossEntropyLoss', 'FocalLoss', 'ce_dice', 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd'")
+                        help="'CrossEntropyLoss', 'FocalLoss', 'ce_dice', DS_Dice, 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd'")
     
     parser.add_argument('--optimizer',          type=str, 
                         default='AdamW', 
@@ -681,20 +749,20 @@ if __name__ == '__main__':
                         help="class names for the dataset, excluding background")
     
     # 正则化
-    parser.add_argument('--elnloss',        type=bool,  default=False)
-    parser.add_argument('--l1_lambda',      type=float, default=0.001)
-    parser.add_argument('--l2_lambda',      type=float, default=0.001)
-    parser.add_argument('--dropout_p',      type=float, default=0.5  )
+    parser.add_argument('--elnloss',        type=bool,  default=True)
+    parser.add_argument('--l1_lambda',      type=float, default=0.0001)
+    parser.add_argument('--l2_lambda',      type=float, default=0.0001)
+    parser.add_argument('--dropout_p',      type=float, default=0.2  )
      
     parser.add_argument('--device',         type=str,   default='cuda:0')
     parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
     parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
     
     # flag参数
-    parser.add_argument('--tb',             type=bool,  default=False,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=False,   help='save weights or not')    
+    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
+    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
     parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
-    parser.add_argument('--change_params',  type=bool,  default=False,  help='change params or not')       
+    parser.add_argument('--mdf_params',     type=bool,  default=False,  help='change params or not')       
     
     # 训练参数
     parser.add_argument('--train_ratio',    type=float, default=0.7) 
@@ -703,23 +771,20 @@ if __name__ == '__main__':
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
     parser.add_argument('--warmup_epochs',  type=int,   default=0,      help='number of warmup epochs')
-
-
-    parser.add_argument('--lr',             type=float, default=1e-4,   help='learning rate')
-    parser.add_argument('--wd',             type=float, default=1e-4,   help='weight decay')
-    
+    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
+    parser.add_argument('--wd',             type=float, default=0,   help='weight decay')
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=60,     help='the numbers of half of T for CosineAnnealingLR')
     parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
 
-    main_args = parser.parse_args()
-
-    aug_data_parser = argparse.ArgumentParser(description="data augmentation")
-    aug_data_parser.add_argument("--root_path",    default="/mnt/e/VScode/WS-Hub/WS-UNet/UNet/datasets",            type=str,       help="root path")
-    aug_data_parser.add_argument("--size",         default="256",                                                   type=str,       help="size of img and mask") 
-    aug_data_parser.add_argument("--aug_times",    default=60,                                                      type=int,       help="augmentation times")
-    aug_args = aug_data_parser.parse_args()
-
-    main(main_args, aug_args)
+    # 数据增强
+    parser.add_argument("--root_path",   default = "./datasets",            type=str,       help="root path")
+    parser.add_argument("--imgsz",       default = "256",                                                   type=str,       help="size of img and mask") 
+    parser.add_argument("--aug_times",   default = 60,    
+                                                                          type=int,       help="augmentation times")
+    # yaml配置
+    parser.add_argument("--config_yaml", type=str, default=None, help="path to the yaml config file")
+    args = parser.parse_args()
+    main(args)
    

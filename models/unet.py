@@ -131,7 +131,7 @@ class AWUNet(UNet):
         self.encoder3 = Att_AWConv(base_channels*2, base_channels*4)
         self.encoder4 = Att_AWConv(base_channels*4, base_channels*8)
         # # 
-        # self.center_conv = Att_AWConv(base_channels*8, base_channels*8)
+        self.center_conv = Att_AWConv(base_channels*8, base_channels*8)
         # 解码器
         self.decoder1 = Att_AWConv(base_channels * 16 , base_channels * 4) 
         self.decoder2 = Att_AWConv(base_channels * 8 ,  base_channels * 2)
@@ -152,7 +152,7 @@ class Attention_UNet(UNet):
             n_classes=n_classes,
             p=p,
             base_channels=base_channels)
-        self.att_gate1 = Att_gate(base_channels,   base_channels,   base_channels // 2)
+        self.att_gate1 = Att_gate(base_channels,   base_channels,   base_channels//2)
         self.att_gate2 = Att_gate(base_channels*2, base_channels*2, base_channels)
         self.att_gate3 = Att_gate(base_channels*4, base_channels*4, base_channels*2)
         self.att_gate4 = Att_gate(base_channels*8, base_channels*8, base_channels*4) 
@@ -267,10 +267,8 @@ class Attention_UNetV2(UNet):
         logits = self.out_conv(x)           # [1, c, 320, 320]       
         return logits             
 if __name__ == '__main__':
-    from utils.attention import EMA
-    from utils.modules import *
-    from utils.model_info import calculate_computation     
-    model = Attention_UNet(in_channels=3, n_classes=4, p=0)
+    from utils import *      
+    model = AWUNet(in_channels=3, n_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))
@@ -283,7 +281,6 @@ if __name__ == '__main__':
     # ========================================
 
 else:
-    from model.utils.attention import *
-    from model.utils.modules import * 
-    from model.utils.model_info import calculate_computation  
+    from models.utils import *
+ 
         

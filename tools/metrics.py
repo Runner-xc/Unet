@@ -42,8 +42,8 @@ class Metrics(nn.Module):
         """
         # 预处理
         prediction = torch.argmax(prediction, dim=1).to(dtype=torch.int64)
-        prediction = F.one_hot(prediction, num_classes=9).permute(0, 3, 1, 2).float() 
-        target = F.one_hot(target, num_classes=9).permute(0, 3, 1, 2).float() 
+        prediction = F.one_hot(prediction, num_classes=self.num_classes+1).permute(0, 3, 1, 2).float() 
+        target = F.one_hot(target, num_classes=self.num_classes+1).permute(0, 3, 1, 2).float() 
 
         # 计算总体召回率
         TP, FN, _, _ = self.compute_confusion_matrix(prediction, target)
@@ -56,8 +56,8 @@ class Metrics(nn.Module):
     def precision(self, prediction, target, threshold=0.5):
         # 预处理
         prediction = torch.argmax(prediction, dim=1).to(dtype=torch.int64) # 降维，选出概率最大的类索引值
-        prediction = F.one_hot(prediction, num_classes=9).permute(0, 3, 1, 2).float() 
-        target = F.one_hot(target, num_classes=9).permute(0, 3, 1, 2).float() 
+        prediction = F.one_hot(prediction, num_classes=self.num_classes+1).permute(0, 3, 1, 2).float() 
+        target = F.one_hot(target, num_classes=self.num_classes+1).permute(0, 3, 1, 2).float() 
         
         # 计算总体精准率
         TP, _, FP, _ = self.compute_confusion_matrix(prediction, target)
@@ -138,6 +138,8 @@ class Metrics(nn.Module):
         """
         更新评价指标
         """
+        if isinstance(prediction, dict):
+            prediction = prediction['deep_supervision'][0]
         recalls = self.recall(prediction, target)
         precisions = self.precision(prediction, target)
         dices = self.dice_coefficient(prediction, target)

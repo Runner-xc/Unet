@@ -1,9 +1,10 @@
 datasets/
 medical_datasets/
-results/
+training_results/
 cam_img/
-predict/
+predict*/
 jupyter/
+GL_Test/
 
 *.onnx
 *.jpg

@@ -3,16 +3,7 @@ unet
 """
 import os
 import torch
-from model.deeplabv3 import deeplabv3_resnet50, deeplabv3_resnet101, deeplabv3_mobilenetv3_large
-from model.pspnet import PSPNet
-from model.Segnet import SegNet
-from model.u2net import u2net_full_config, u2net_lite_config
-from model.unet import UNet, ResD_UNet
-from model.aicunet import AICUNet
-from model.a_unet import A_UNet
-from model.m_unet import M_UNet
-from model.rdam_unet import RDAM_UNet
-from model.vm_unet import VMUNet
+from nets import *
 import torch.nn.functional as F
 from PIL import Image
 import numpy as np

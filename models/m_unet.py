@@ -126,6 +126,6 @@ if __name__ == '__main__':
     calculate_computation(model, input_size=(3, 256, 256), device=device)
 
 else:
-    from model.utils.attention import *
-    from model.utils.modules import * 
-    from model.utils.model_info import calculate_computation 
+    from models.utils.attention import *
+    from models.utils.modules import * 
+    from models.utils.model_info import calculate_computation 

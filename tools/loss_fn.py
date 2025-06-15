@@ -42,7 +42,7 @@ class CrossEntropyLoss():
         loss_dict['total_loss'] = total_loss
         return loss_dict
     
-class diceloss():
+class Diceloss():
     def __init__(self, class_names, smooth=1e-5):
         """
         smooth: 平滑值
@@ -70,12 +70,59 @@ class diceloss():
         union = logits.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
         dice = (2 * intersection) / (union + self.smooth)
         loss = tensor_one - dice
-        total_loss = loss.sum()
+        total_loss = loss.sum() / (num_classes - 1)
         
         # 计算每个类别的损失
         loss_dict = {name: loss[i] for i, name in enumerate(self.class_names)}
         loss_dict['total_loss'] = total_loss
         return loss_dict
+
+class DS_Diceloss():
+    def __init__(self, class_names, smooth=1e-5):
+        """
+        smooth: 平滑值
+        """
+        self.smooth = smooth
+        self.class_names = class_names
+
+    def __call__(self, logits, targets):
+        """
+        img_pred: 预测值 (batch, 8, h, w)
+        img_mask: 标签值 (batch, h, w)
+        """
+        if isinstance(logits, dict):
+            num_classes = logits["deep_supervision"][0].shape[1]
+            tensor_one = torch.tensor(1)
+            d1, d2, d3, d4 = logits["deep_supervision"]
+
+            # logits argmax 
+            d1 = torch.softmax(d1, dim=1)
+            d2 = torch.softmax(d2, dim=1)
+            d3 = torch.softmax(d3, dim=1)
+            d4 = torch.softmax(d4, dim=1)
+            # targets: (b, h, w) -> (b, c, h, w)
+            targets = targets.to(torch.int64)
+            targets = F.one_hot(targets, num_classes=num_classes).permute(0, 3, 1, 2).float()  
+            preds = d1[:, 1:, ...], d2[:, 1:, ...], d3[:, 1:, ...], d4[:, 1:, ...]
+            targets = targets[:, 1:, ...]
+            # 计算总的损失
+            loss_list = []
+            for pred in preds:
+                intersection = (pred * targets).sum(dim=(0,-2,-1))
+                union = pred.sum(dim=(0,-2,-1)) + targets.sum(dim=(0,-2,-1))
+                dice = (2 * intersection) / (union + self.smooth)
+                loss = tensor_one - dice
+                loss_list.append(loss)
+            loss = 0.4*loss_list[0] + 0.3*loss_list[1] + 0.2*loss_list[2] + 0.1*loss_list[3]
+            total_loss = loss.sum()
+            # 计算每个类别的损失
+            loss_dict = {name: loss[i] for i, name in enumerate(self.class_names)}
+            loss_dict['total_loss'] = total_loss
+            return loss_dict
+        else:
+            loss_fn = Diceloss(self.class_names)
+            loss_dict = loss_fn(logits, targets)
+            return loss_dict
 
 class CEDiceLoss(nn.Module):
     def __init__(self, ce_weight=0.5, dice_weight=0.5, smooth=1e-5):
@@ -351,8 +398,10 @@ class DWDLoss(nn.Module):
 if __name__ == '__main__':
     x = torch.randn(8, 4, 256, 256)
     y = torch.randint(0, 4, (8, 256, 256))
-    dice_loss = diceloss()
-    focal_loss = Focal_Loss()
-    a = focal_loss(x, y)
-    print(focal_loss(x, y))
+    z = {"deep_supervision": (x, x, x, x)}
+    dice_loss = Diceloss(class_names=['Organic matter', 'Organic pores', 'Inorganic pores'])
+    focal_loss = Focal_Loss(class_names=['Organic matter', 'Organic pores', 'Inorganic pores'])
+    ds_dice = DS_Diceloss(class_names=['Organic matter', 'Organic pores', 'Inorganic pores'])
+    a = ds_dice(z, y)
+    print(ds_dice(z, y))
     # print(a)

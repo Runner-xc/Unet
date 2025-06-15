@@ -283,5 +283,5 @@ if __name__ == '__main__':
     summary(net, (1, 3, 256, 256), device='cuda')
 
 else:
-    from model.utils.resnet_backbone import resnet50, resnet101
-    from model.utils.mobilenet_backbone import mobilenet_v3_large
+    from models.utils.resnet_backbone import resnet50, resnet101
+    from models.utils.mobilenet_backbone import mobilenet_v3_large
