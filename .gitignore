@@ -14,5 +14,8 @@ weights/
 *.tif
 **/__pycache__
 
-!images/Image1 - 003.jpeg
-!images/Image1 - 003.png
+!images/gradio.png
+!images/Image1 - 016.jpeg
+!images/Image1 - 027.jpeg
+!images/Image1 - 031.jpeg
+!images/Image1 - 040.jpeg
