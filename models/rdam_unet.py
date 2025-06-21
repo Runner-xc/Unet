@@ -7,7 +7,7 @@ from tensorboardX import SummaryWriter
 class RDAM_UNet(nn.Module):
     def __init__(self, 
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
@@ -56,7 +56,7 @@ class RDAM_UNet(nn.Module):
         self.decoder_dropout2 = nn.Dropout2d(p=p*0.2 if p!=0 else 0)
 
         # 输出层
-        self.out_conv = nn.Conv2d(base_channels, n_classes, kernel_size=1)
+        self.out_conv = nn.Conv2d(base_channels, num_classes, kernel_size=1)
 
     def forward(self, x):
         x1 = self.encoder1(x)
@@ -114,7 +114,7 @@ class RDAM_UNet(nn.Module):
 class DWRDAM_UNet(nn.Module):
     def __init__(self, 
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
@@ -142,7 +142,7 @@ class DWRDAM_UNet(nn.Module):
         self.decoder3 = DWDoubleConv(base_channels * 4,    base_channels,   )
         self.decoder4 = DWDoubleConv(base_channels * 2,    base_channels,   )
         # 输出层
-        self.out_conv = nn.Conv2d(base_channels, n_classes, kernel_size=1)
+        self.out_conv = nn.Conv2d(base_channels, num_classes, kernel_size=1)
 
         # encoder_dropout
         self.encoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
@@ -201,13 +201,13 @@ class DWRDAM_UNet(nn.Module):
 class DWRDAM_UNetV2(DWRDAM_UNet):
     def __init__(self, 
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
         super(DWRDAM_UNetV2, self).__init__(
             in_channels=in_channels,
-            n_classes=n_classes,
+            num_classes=num_classes,
             p=p,
             base_channels=base_channels
         )
@@ -223,13 +223,13 @@ class DWRDAM_UNetV2(DWRDAM_UNet):
 class DWRDAM_UNetV3(DWRDAM_UNet):
     def __init__(self, 
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
         super(DWRDAM_UNetV3, self).__init__(
             in_channels=in_channels,
-            n_classes=n_classes,
+            num_classes=num_classes,
             p=p,
             base_channels=base_channels
         )
@@ -245,13 +245,13 @@ class DWRDAM_UNetV3(DWRDAM_UNet):
 class DWRDAM_UNetV4(DWRDAM_UNetV2):
     def __init__(self, 
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
         super(DWRDAM_UNetV4, self).__init__(
             in_channels=in_channels,
-            n_classes=n_classes,
+            num_classes=num_classes,
             p=p,
             base_channels=base_channels
         )
@@ -313,13 +313,13 @@ class DWRDAM_UNetV4(DWRDAM_UNetV2):
 class DWRDAM_UNetV5(DWRDAM_UNet): # 不同深度解码器直接上采样还原至原图分辨率，最后将不同深度的特征图进行CAT最后分类  
     def __init__(self, 
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
         super(DWRDAM_UNetV5, self).__init__(
             in_channels=in_channels,
-            n_classes=n_classes,
+            num_classes=num_classes,
             p=p,
             base_channels=base_channels
         )
@@ -341,7 +341,7 @@ class DWRDAM_UNetV5(DWRDAM_UNet): # 不同深度解码器直接上采样还原�
         self.out_conv = nn.Sequential(
                         nn.Conv2d(base_channels * 4, base_channels,  kernel_size=1),
                         nn.ReLU(inplace=True),
-                        nn.Conv2d(base_channels, n_classes, kernel_size=1))
+                        nn.Conv2d(base_channels, num_classes, kernel_size=1))
 
     def forward(self, x):
         x1 = self.encoder1(x)
@@ -386,8 +386,8 @@ class DWRDAM_UNetV5(DWRDAM_UNet): # 不同深度解码器直接上采样还原�
         return logits
 
 class MAUNet(DWRDAM_UNet):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super().__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super().__init__(in_channels, num_classes, p, base_channels)
         # 编码器
         self.encoder1 = AMSFNV4(in_channels,      base_channels, )
         self.encoder2 = AMSFNV4(base_channels,    base_channels*2)
@@ -404,8 +404,8 @@ class MAUNet(DWRDAM_UNet):
     
 if __name__ == "__main__":
     from utils import * 
-    model1 = DWRDAM_UNetV4(in_channels=3, n_classes=4, p=0)
-    # model2 = RDAM_UNet(in_channels=3, n_classes=4, p=0)
+    model1 = DWRDAM_UNetV4(in_channels=3, num_classes=4, p=0)
+    # model2 = RDAM_UNet(in_channels=3, num_classes=4, p=0)
     # x = torch.randn(1, 3, 256, 256)
     # y1 = model1(x)
     print(summary(model1, (1, 3, 256, 256)))

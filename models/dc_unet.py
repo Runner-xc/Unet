@@ -99,7 +99,7 @@ class Dynamic_conv2d(nn.Module):
 class DC_UNet(nn.Module):
     def __init__(self,
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  K=4,
@@ -130,7 +130,7 @@ class DC_UNet(nn.Module):
         self.decoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
         self.decoder_dropout2 = nn.Dropout2d(p=p*0.2 if p!=0 else 0)
         # 输出层
-        self.out_conv = nn.Conv2d(base_channels, n_classes, kernel_size=1)
+        self.out_conv = nn.Conv2d(base_channels, num_classes, kernel_size=1)
 
     def forward(self, x):
         x1 = self.encoder1(x)             # [1, 32, 320, 320]
@@ -177,7 +177,7 @@ class DC_UNet(nn.Module):
 if __name__ == '__main__':
     from utils.model_info import calculate_computation
     from utils.modules import DoubleConv
-    model = DC_UNet(in_channels=3, n_classes=4, p=0)
+    model = DC_UNet(in_channels=3, num_classes=4, p=0)
     summary(model,(1, 3, 256, 256))
     # ==========================================================================================
     # Total params: 7,181,596

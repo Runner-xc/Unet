@@ -15,3 +15,4 @@ from .u2net import u2net_full_config, u2net_lite_config
 from .unet import (UNet, ResD_UNet, AWUNet, Attention_UNet)
 from .vm_unet import VMUNet
 from .unetplusplus import UnetPlusPlus
+from .res_unet import RES50_UNet, RES18_UNet, SegModel

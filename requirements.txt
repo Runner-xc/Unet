@@ -14,3 +14,4 @@ monai
 h5py
 kaggle
 rich
+gradio

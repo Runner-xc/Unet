@@ -6,40 +6,28 @@ import torch.nn.functional as F
 """
 训练和验证
 """
-def _total_loss(model_output, target, loss_fn):
+def _total_loss(model_outputs, target, loss_fn, class_names):
     """
     model_output: 预测值
     target: 真实值
     loss_fn: 损失函数
     """
-    # 获取总的损失 TODO: 使用字典存储损失
-    loss_dict_list = [loss_fn(F.softmax(model_output[i], dim=1), target) for i in range(len(model_output))]
+    # 创建损失字典
+    loss_dict = {cls:0.0 for cls in class_names}
+    loss_dict['total_loss'] = 0.0
+    # 获取每一层的损失
+    loss_dict_list = [loss_fn(F.softmax(model_output, dim=1), target) for model_output in model_outputs]
 
-    total_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
-    OM_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
-    OP_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
-    IOP_losses = torch.tensor(0.0, dtype=torch.float32, device="cuda:0")
-
-    # 遍历每一层损失
-    for loss_dict in loss_dict_list: 
-        # OM_loss = loss_dict['Organic matter']   # list:[8]
-        # OP_loss = loss_dict['Organic pores']
-        # IOP_loss = loss_dict['Inorganic pores']
-        total_loss = loss_dict['total_loss']
-        
-        # 累加损失
-        total_losses += total_loss
-        # OM_losses += OM_loss
-        # OP_losses += OP_loss
-        # IOP_losses += IOP_loss
+    for i in loss_dict_list: 
+        for cls in class_names:
+            loss_dict[cls] += i[cls]
+        loss_dict['total_loss'] += i['total_loss'] 
     
-    # 计算 7层 平均损失
-    total_loss =  total_losses / len(loss_dict_list)
-    # OM_loss = OM_losses / len(loss_dict_list)
-    # OP_loss = OP_losses / len(loss_dict_list) 
-    # IOP_loss = IOP_losses / len(loss_dict_list) 
-
-    return total_loss
+    # 计算平均损失
+    for cls in class_names:
+        loss_dict[cls] /= len(loss_dict_list)
+    loss_dict['total_loss'] /= len(loss_dict_list)
+    return loss_dict
 
 def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, scaler, Metric, scheduler, class_names, elnloss, l1_lambda, l2_lambda):
     """"
@@ -74,7 +62,9 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
 
             # U2Net
             if isinstance(pred, list):
-                total_loss = _total_loss(pred, masks, loss_fn)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+                loss_dict = _total_loss(pred, masks, loss_fn, class_names)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+                losses = loss_dict.values()
+                total_loss = loss_dict['total_loss']
                 if elnloss:
                     # 添加Elastic Net正则化
                     elastic_net_loss = model.elastic_net(l1_lambda=l1_lambda, l2_lambda=l2_lambda)
@@ -88,7 +78,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
                     heatmap, aux = pred
                     # 主分支loss
                     main_loss_dict = loss_fn(heatmap, masks)
-                    class_names, main_losses = main_loss_dict.keys(), main_loss_dict.values()
+                    main_losses = main_loss_dict.values()
                     
                     # 辅助分支loss
                     aux_loss_dict = loss_fn(aux, masks)
@@ -105,7 +95,7 @@ def train_one_epoch(model, optimizer, epoch, train_dataloader, device, loss_fn, 
                     Metric_list += metrics
             else:
                 loss_dict = loss_fn(pred, masks)
-                class_names, losses = loss_dict.keys(), loss_dict.values()
+                losses = loss_dict.values()
                 total_loss = loss_dict['total_loss']
                 if elnloss:
                     # 添加Elastic Net正则化
@@ -155,7 +145,9 @@ def evaluate(model, device, data_loader, loss_fn, Metric, class_names, test:bool
                 masks = masks.squeeze(1)
                 # U2Net
                 if isinstance(pred_mask, list):
-                    total_loss = _total_loss(pred_mask, masks, loss_fn)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+                    loss_dict = _total_loss(pred_mask, masks, loss_fn, class_names)  #  训练输出 7 个预测结果，6 个解码器输出和 1 个总输出。
+                    losses = loss_dict.values()
+                    total_loss = loss_dict['total_loss']
                     metrics = Metric.update(pred_mask, masks)
                     Metric_list += metrics
 
@@ -164,26 +156,23 @@ def evaluate(model, device, data_loader, loss_fn, Metric, class_names, test:bool
                     heatmap, aux = pred_mask
                     # 主分支loss
                     main_loss_dict = loss_fn(heatmap, masks)
-                    class_names, main_losses = main_loss_dict.keys(), main_loss_dict.values()
+                    main_losses = main_loss_dict.values()
                     # 辅助分支loss
                     aux_loss_dict = loss_fn(aux, masks)
                     aux_losses = aux_loss_dict.values()
                     # 计算总损失：主分支损失*0.6 + 辅助分支损失*0.4
                     losses = [m_loss*0.6 + a_loss*0.4 for m_loss, a_loss in zip(main_losses, aux_losses)]
                     total_loss = losses[-1]
-
                     metrics = Metric.update(heatmap, masks)
                     Metric_list += metrics    
 
                 else:
                     loss_dict = loss_fn(pred_mask, masks)
-                    class_names, losses = loss_dict.keys(), loss_dict.values()
-
+                    losses = loss_dict.values()
                     metrics = Metric.update(pred_mask, masks)
                     Metric_list += metrics    
 
-            # 累加损失   # TODO : 2
+            # 累加损失 
             epoch_losses = [x+y for x, y in zip(epoch_losses, losses)]
-    
     Metric_list /= len(val_dataloader)
     return  epoch_losses, Metric_list

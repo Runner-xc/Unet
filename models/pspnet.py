@@ -2,6 +2,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torchinfo import summary
+import torchvision.models as models
+from torchvision.models import ResNet50_Weights, ResNet101_Weights, ResNet152_Weights
+
 class PPM(nn.Module):
     def __init__(self, in_dim, reduction_dim, bins):
         super(PPM, self).__init__()
@@ -35,12 +38,12 @@ class PSPNet(nn.Module):
         self.criterion = criterion
 
         if layers == 50:
-            resnet = models.resnet50(pretrained=pretrained)
+            resnet = models.resnet50(weights=ResNet50_Weights.DEFAULT)
         elif layers == 101:
-            resnet = models.resnet101(pretrained=pretrained)
+            resnet = models.resnet101(weights=ResNet101_Weights.DEFAULT)
         else:
-            resnet = models.resnet152(pretrained=pretrained)
-        self.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.conv2, resnet.bn2, resnet.relu, resnet.conv3, resnet.bn3, resnet.relu, resnet.maxpool)
+            resnet = models.resnet152(weights=ResNet152_Weights.DEFAULT)
+        self.layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
         self.layer1, self.layer2, self.layer3, self.layer4 = resnet.layer1, resnet.layer2, resnet.layer3, resnet.layer4
 
         for n, m in self.layer3.named_modules():
@@ -97,7 +100,6 @@ class PSPNet(nn.Module):
 
 if __name__ == '__main__':
     import os
-    import resnet as models
     os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1'
     input = torch.rand(1, 3, 256, 256).cuda()
     model = PSPNet(classes=4, dropout=0.5, pretrained=False).cuda()
@@ -106,6 +108,3 @@ if __name__ == '__main__':
     # output = model(input)
     # print('PSPNet', output.size())
     summary(model, input_size=(1, 3, 256, 256), device='cuda', depth=5)
-
-else:
-    from . import resnet as models

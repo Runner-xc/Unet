@@ -8,7 +8,7 @@ class DeepSV_DW_UNet(nn.Module):
     deep_supervised UNet with MambaLayer and Attention DWConv
     """
     def __init__(self, in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
@@ -42,10 +42,10 @@ class DeepSV_DW_UNet(nn.Module):
         self.decoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
         self.decoder_dropout2 = nn.Dropout2d(p=p*0.2 if p!=0 else 0)
         # 输出层
-        self.out_conv = nn.Conv2d(base_channels, n_classes, kernel_size=1)
-        self.convd2 = nn.Conv2d(32, n_classes, kernel_size=1)
-        self.convd3 = nn.Conv2d(64, n_classes, kernel_size=1)
-        self.convd4 = nn.Conv2d(128, n_classes, kernel_size=1)
+        self.out_conv = nn.Conv2d(base_channels, num_classes, kernel_size=1)
+        self.convd2 = nn.Conv2d(32, num_classes, kernel_size=1)
+        self.convd3 = nn.Conv2d(64, num_classes, kernel_size=1)
+        self.convd4 = nn.Conv2d(128, num_classes, kernel_size=1)
         
     def forward(self, x):
         b, c, h, w = x.shape
@@ -104,11 +104,11 @@ class DeepSV_DW_UNetV2(DeepSV_DW_UNet):
     deep_supervised UNet with MambaLayer and Attention DWConv
     """
     def __init__(self, in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
-        super(DeepSV_DW_UNetV2, self).__init__(in_channels, n_classes, p, base_channels)
+        super(DeepSV_DW_UNetV2, self).__init__(in_channels, num_classes, p, base_channels)
         # 编码器
         self.encoder1 = AMSFNV4(in_channels,     base_channels)
         self.encoder2 = AMSFNV4(base_channels,   base_channels*2)
@@ -119,7 +119,7 @@ class DeepSV_DW_UNetV2(DeepSV_DW_UNet):
         
 if __name__ == '__main__':
     from utils import *  
-    model = DeepSV_DW_UNetV2(in_channels=3, n_classes=4, p=0)
+    model = DeepSV_DW_UNetV2(in_channels=3, num_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))

@@ -5,6 +5,7 @@ cam_img/
 predict*/
 jupyter/
 GL_Test/
+weights/
 
 *.onnx
 *.jpg

@@ -11,6 +11,7 @@ from tabulate import tabulate
 import tools.transforms as T
 from torchvision import transforms 
 from typing import Union, List
+from tools.cfg_loader import get_model_config, get_lossfn
 
 class SODPresetEval:
     def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
@@ -36,46 +37,7 @@ def main(args):
                              batch_size=1, 
                              shuffle=False, 
                              num_workers=num_workers)
-    
-    # 加载模型
-    model_map = {
-            "u2net_full"                    : u2net_full_config(),
-            "u2net_lite"                    : u2net_lite_config(),
-            "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "att_unet"                      : Attention_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "unet++"                        : UnetPlusPlus(in_channels=3, num_classes=4, base_channel=32, deep_supervision=False), 
-            "aw_unet"                       : AWUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv2"                      : A_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv3"                      : A_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv4"                      : A_UNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv5"                      : A_UNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv6"                      : A_UNetV6(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "ma_unet"                       : MAUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunet"                   : Mamba_AUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv2"                 : Mamba_AUNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv3"                 : Mamba_AUNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv4"                 : Mamba_AUNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv5"                 : Mamba_AUNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "ds_dw_unet"                    : DeepSV_DW_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            
-            "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "dwrdam_unetv2"                 : DWRDAM_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "dwrdam_unetv3"                 : DWRDAM_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
-            "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
-            "Segnet"                        : SegNet(n_classes=4, dropout_p=args.dropout_p),
-            "pspnet"                        : PSPNet(classes=4, dropout=args.dropout_p, pretrained=False),
-            "deeplabv3_resnet50"            : deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_resnet101"           : deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_mobilenetv3_large"   : deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
-        }
-    model = model_map.get(args.model)
-    if not model:
-        raise ValueError(f"Invalid model name: {args.model}")
+    model = get_model_config(args)
     
     # 加载模型权重
     pretrain_weights = torch.load(args.weights_path, weights_only=True)
@@ -207,12 +169,12 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path',      type=str,       default='./datasets/CSV/test_shale_256.csv')
+    parser.add_argument('--data_path',      type=str,       default='./datasets/CSV/test_shale_256_v2.csv')
     parser.add_argument('--base_size',      type=int,       default=256 )
     parser.add_argument('--dropout_p',      type=int,       default=0   )
-    parser.add_argument('--model',          type=str,       default='mamba_aunetv5',     help='aicunet, att_unet, dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
+    parser.add_argument('--model',          type=str,       default='a_unetv4',     help='aicunet, att_unet, dwrdam_unet, unet, a_unet, m_unet, rdam_unet, ResD_unet, Segnet, pspnet, deeplabv3, u2net_full, u2net_lite')
     parser.add_argument('--weights_path',   type=str,       
-                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/results/save_weights/mamba_aunetv5/DiceLoss-CosineAnnealingLR/AdamW-lr_0.0008-l1_0.0001-l2_0.0001/2025-06-12_10-49-02/model_best_ep_43.pth')
+                                            default='/mnt/e/VScode/WS-Hub/WS-UNet/UNet/training_results/weights/a_unetv4/DiceLoss-CosineAnnealingLR/AdamW-lr_0.0005-l1_0.0001-l2_0.0001/2025-06-19_12-06-37/model_best_ep_61.pth')
     
     parser.add_argument('--save_path',      type=str,       default='./predict')
     parser.add_argument('--single_path',    type=str,       default='./predict_single')

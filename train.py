@@ -18,6 +18,8 @@ from torchinfo import summary
 import swanlab
 import yaml
 from rich.console import Console
+from tools.cfg_loader import get_model_config, get_lossfn
+
 color = Console()
 # 预处理
 class SODPresetTrain:
@@ -258,65 +260,8 @@ def main(args):
                                 num_workers=num_workers,
                                 pin_memory=True)
     """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
-    # 加载模型
-    model_map = {
-
-            # UNet 系列
-            "u2net_full"                    : u2net_full_config(),
-            "u2net_lite"                    : u2net_lite_config(),
-            "unet"                          : UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "att_unet"                      : Attention_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "ResD_unet"                     : ResD_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "aw_unet"                       : AWUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "unetpulsplus"                  : UnetPlusPlus(in_channels=3, num_classes=4, base_channel=32, deep_supervision=False),   
-
-            # a_unet
-            "a_unet"                        : A_UNet(in_channels=3, n_classes=4, base_channels=32,    p=args.dropout_p),
-            "a_unetv2"                      : A_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv3"                      : A_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv4"                      : A_UNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv5"                      : A_UNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "a_unetv6"                      : A_UNetV6(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-
-            # m_unet
-            "m_unet"                        : M_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "m_unetv2"                      : M_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p), 
-            "m_unetv3"                      : M_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),   
-
-            "ma_unet"                       : MAUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "ds_dw_unet"                    : DeepSV_DW_UNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
-            "ds_dw_unetv2"                  : DeepSV_DW_UNetV2(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
-
-            # mamba
-            "mamba_aunet"                   : Mamba_AUNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv2"                 : Mamba_AUNetV2(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv3"                 : Mamba_AUNetV3(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv4"                 : Mamba_AUNetV4(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "mamba_aunetv5"                 : Mamba_AUNetV5(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            
-            # rdam_unet
-            "rdam_unet"                     : RDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=args.dropout_p),
-            "dwrdam_unet"                   : DWRDAM_UNet(in_channels=3, n_classes=4, base_channels=32,  p=0),
-            "dwrdam_unetv2"                 : DWRDAM_UNetV2(in_channels=3, n_classes=4, base_channels=32,  p=0),
-            'dwrdam_unetv3'                 : DWRDAM_UNetV3(in_channels=3, n_classes=4, base_channels=32,  p=0),
-
-            # 变体
-            "aicunet"                       : AICUNet(in_channels=3, n_classes=4, base_channels=32, p=args.dropout_p),
-            "vm_unet"                       : VMUNet(input_channels=3, num_classes=4),
-            "dc_unet"                       : DC_UNet(in_channels=3, n_classes=4, p=args.dropout_p),
-
-            # 其他架构
-            "Segnet"                        : SegNet(n_classes=4, dropout_p=args.dropout_p),
-            "pspnet"                        : PSPNet(classes=4, dropout=args.dropout_p, pretrained=False),
-            "deeplabv3_resnet50"            : deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_resnet101"           : deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4),
-            "deeplabv3_mobilenetv3_large"   : deeplabv3_mobilenetv3_large(aux=False, pretrain_backbone=False, num_classes=4)
-        }
-    model = model_map.get(args.model)
-    if not model:
-        raise ValueError(f"Invalid model name: {args.model}")
-    
     # 初始化模型
+    model = get_model_config(args)
     model.apply(init_weights_2d)
     model.to(device)
     check_initialization(model)
@@ -379,22 +324,8 @@ def main(args):
                                       eps=1e-8)
     else:
         color.print(f"wrong scaler name[red]{args.scheduler}[/red]")
-        
-    # 损失函数 
-    loss_map = {
-            'CrossEntropyLoss'  : CrossEntropyLoss(args.class_names),
-            'DiceLoss'          : Diceloss(args.class_names),
-            'DS_Dice'           : DS_Diceloss(args.class_names),
-            'FocalLoss'         : Focal_Loss(args.class_names),
-            'WDiceLoss'         : WDiceLoss(args.class_names),
-            'DWDLoss'           : DWDLoss(args.class_names),
-            'IoULoss'           : IOULoss(args.class_names),
-            'ce_dice'           : CEDiceLoss(args.class_names),
-            'dice_hd'           : AdaptiveSegLoss(4)
-        }
-    loss_fn = loss_map.get(args.loss_fn)
     
-    # 缩放器
+    loss_fn = get_lossfn(args)
     scaler = torch.amp.GradScaler() if args.amp else None
     metrics = Metrics(args.class_names)
     
@@ -728,7 +659,7 @@ if __name__ == '__main__':
     
     # 模型配置
     parser.add_argument('--model',              type=str, 
-                        default="unetpulsplus", 
+                        default="att_unet", 
                         help=" unet, ResD_unet, unetpulsplus, att_unet, ds_dw_unet, rdam_unet, ma_unet, mamba_aunet, a_unet, m_unet, aw_unet, aicunet, dwrdam_unetv2\
                                Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
     
@@ -770,9 +701,9 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size',     type=int,   default=8 ) 
     parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
     parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
-    parser.add_argument('--warmup_epochs',  type=int,   default=0,      help='number of warmup epochs')
-    parser.add_argument('--lr',             type=float, default=8e-4,   help='learning rate')
-    parser.add_argument('--wd',             type=float, default=0,   help='weight decay')
+    parser.add_argument('--warmup_epochs',  type=int,   default=5,      help='number of warmup epochs')
+    parser.add_argument('--lr',             type=float, default=5e-4,   help='learning rate')
+    parser.add_argument('--wd',             type=float, default=0,      help='weight decay')
     parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
     parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
     parser.add_argument('--Tmax',           type=int,   default=60,     help='the numbers of half of T for CosineAnnealingLR')

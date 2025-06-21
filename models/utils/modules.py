@@ -811,7 +811,7 @@ if __name__ == '__main__':
     print(out.shape, "\n",
           model)
     
-elif os.path.dirname(os.path.abspath(__file__)) == '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/model/utils':
+elif os.path.dirname(os.path.abspath(__file__)) == '/mnt/e/VScode/WS-Hub/WS-UNet/UNet/models/utils':
     from .attention import *
 
 else:

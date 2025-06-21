@@ -216,7 +216,7 @@ class ShaleAugmentor:
         plt.tight_layout()
         plt.show()
 
-def aug_data_processing(root_path, size="256", aug_times=60, data_csv=None, datasets_name=None):
+def aug_data_processing(root_path, size="256", aug_times=60, data_csv=None, datasets_name=None, v=None):
     path_dict = {'img': [], 'mask': []}
     # 配置参数
     config = {
@@ -231,36 +231,67 @@ def aug_data_processing(root_path, size="256", aug_times=60, data_csv=None, data
         "size"     : size,
         "aug_times": aug_times,
         }
-    
+    ## V3版本的配置
     train_aug_config = {
                     "sobel": {"threshhold": 100, "p": 0.2},
                     "unsharp_mask": {"p": 0.3, "sigma": 1.0, "strength": 0.4},
                     "morphology": {"kernel_size": 3, "p": 0.25},
-                    "histogram_equalization": {"p": 0.03},
-                    "noise": {"gaussian_p": 0.25, "sp_p": 0, "gaussian_sigma": 8},
-                    "random_erase": {"p": 0.2, "erase_area_ratio": 0.03},
+                    "histogram_equalization": {"p": 0.1},  # 提高概率
+                    "noise": {"gaussian_p": 0.3, "sp_p": 0, "gaussian_sigma": 12},  # 提高概率和强度
+                    "random_erase": {"p": 0.2, "erase_area_ratio": 0.05},  # 提高擦除区域比例
                     "random_rotate": {"p": 0.7, "angle_std": 20}
-                }
+}
     
     val_aug_config = {
                     "sobel": {"p": 0},
                     "unsharp_mask": {"p": 0},  
                     "morphology": {"kernel_size": 3, "p": 0.05},
-                    "histogram_equalization": {"p": 0},
-                    "noise": {"gaussian_p": 0.15, "sp_p": 0.0, "gaussian_sigma": 5},
-                    "random_erase": {"p": 0},
-                    "random_rotate": {"p": 0.5, "angle_std": 10},
-                }
+                    "histogram_equalization": {"p": 0.05},  # 启用直方图均衡化
+                    "noise": {"gaussian_p": 0.2, "sp_p": 0.0, "gaussian_sigma": 8},  # 提高概率和强度
+                    "random_erase": {"p": 0.1},  # 引入少量随机擦除
+                    "random_rotate": {"p": 0.5, "angle_std": 15}  # 增加随机性
+}
     
     test_aug_config = {
                     "sobel": {"p": 0},
-                    "random_rotate": {"p": 1, "angle_std": 0},
+                    "random_rotate": {"p": 1, "angle_std": 5},
                     "unsharp_mask": {"p": 0},
                     "morphology": {"p": 0},
                     "histogram_equalization": {"p": 0},
                     "noise": {"gaussian_p": 0.1, "sp_p": 0, "gaussian_sigma": 5},
                     "random_erase": {"p": 0}
                 }
+    
+    ## V2版本的配置
+    # train_aug_config = {
+    #                 "sobel": {"threshhold" : 110, "p": 0.15},
+    #                 "unsharp_mask": {"p": 0.25, "sigma": 0.8, "strength": 0.3},  
+    #                 "morphology": {"kernel_size": 3, "p": 0.2},
+    #                 "histogram_equalization": {"p": 0.02},
+    #                 "noise": {"gaussian_p": 0.3, "sp_p": 0, "gaussian_sigma": 12},
+    #                 "random_erase": {"p": 0.15, "erase_area_ratio": 0.02},
+    #                 "random_rotate": {"p": 0.6, "angle_std": 25},
+    #             }
+    
+    # val_aug_config = {
+    #                 "sobel": {"p": 0},
+    #                 "unsharp_mask": {"p": 0},  
+    #                 "morphology": {"kernel_size": 3, "p": 0.05},
+    #                 "histogram_equalization": {"p": 0},
+    #                 "noise": {"gaussian_p": 0.15, "sp_p": 0.0, "gaussian_sigma": 5},
+    #                 "random_erase": {"p": 0},
+    #                 "random_rotate": {"p": 0.5, "angle_std": 10},
+    #             }
+    
+    # test_aug_config = {
+    #                 "sobel": {"p": 0},
+    #                 "random_rotate": {"p": 1, "angle_std": 0},
+    #                 "unsharp_mask": {"p": 0},
+    #                 "morphology": {"p": 0},
+    #                 "histogram_equalization": {"p": 0},
+    #                 "noise": {"gaussian_p": 0.1, "sp_p": 0, "gaussian_sigma": 5},
+    #                 "random_erase": {"p": 0}
+    #             }
 
     # 初始化数据集增强器
     train_augmentor = ShaleAugmentor(train_aug_config)
@@ -276,8 +307,8 @@ def aug_data_processing(root_path, size="256", aug_times=60, data_csv=None, data
         raise ValueError("Invalid datasets_name. Choose from 'train', 'val', or 'test'.")
 
     # 输出路径
-    output_images_path = os.path.join(os.path.join(config["output"]["images"], config["size"]), "time_" + str(config['aug_times']))
-    output_masks_path = os.path.join(os.path.join(config["output"]["masks"], config["size"]), "time_" + str(config['aug_times']))
+    output_images_path = os.path.join(os.path.join(config["output"]["images"], config["size"]), "time_" + str(config['aug_times']) + "_" + v)
+    output_masks_path = os.path.join(os.path.join(config["output"]["masks"], config["size"]), "time_" + str(config['aug_times']) + "_" + v)
     if datasets_name:
         output_images_path = os.path.join(output_images_path, datasets_name)
         output_masks_path = os.path.join(output_masks_path, datasets_name)

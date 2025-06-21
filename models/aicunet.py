@@ -137,7 +137,7 @@ class AIConv3d(nn.Module):
     
 class AICUNet(nn.Module):
     def __init__(self, in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
@@ -167,7 +167,7 @@ class AICUNet(nn.Module):
         self.decoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
         self.decoder_dropout2 = nn.Dropout2d(p=p*0.2 if p!=0 else 0)
         # 输出层
-        self.out_conv = OutConv(base_channels, n_classes)
+        self.out_conv = OutConv(base_channels, num_classes)
         
     def forward(self, x):
         x1 = self.encoder1(x)             # [1, 32, 320, 320]
@@ -221,7 +221,7 @@ if __name__ == '__main__':
     # out2 = model2(y)
     # print(x.shape)
     # print(y.shape)
-    aicunet = AICUNet(in_channels=3, n_classes=4, p=0)
+    aicunet = AICUNet(in_channels=3, num_classes=4, p=0)
     # output = aicunet(x)
     summary(aicunet, (1, 3, 256, 256), device='cuda')
     # print(output.shape)

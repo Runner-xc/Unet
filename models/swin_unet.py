@@ -87,7 +87,7 @@ class SwinUnet(nn.Module):
             print("none pretrain")
 if __name__ == '__main__':
     from utils.swin_transformer_unet_skip_expand_decoder_sys import SwinTransformerSys
-    model = SwinUnet(in_channels=3, n_classes=4, p=0)
+    model = SwinUnet(in_channels=3, num_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))

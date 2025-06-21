@@ -99,7 +99,7 @@ class Encoder(nn.Module):
     
 #SegNet网络, Encoder-Decoder
 class SegNet(nn.Module):
-    def __init__(self, n_classes, dropout_p):
+    def __init__(self, num_classes, dropout_p):
         super(SegNet, self).__init__()
         #加载Encoder
         self.encoder = Encoder(dropout_p)
@@ -154,7 +154,7 @@ class SegNet(nn.Module):
             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.Conv2d(64, n_classes, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(64, num_classes, kernel_size=3, stride=1, padding=1),
         )   
         
     def forward(self, x):
@@ -183,7 +183,7 @@ class SegNet(nn.Module):
         return out
 
 if __name__ == '__main__':
-    model = SegNet(n_classes=4, dropout_p=0)
+    model = SegNet(num_classes=4, dropout_p=0)
     summary(model,(1, 3, 256, 256))
 
     

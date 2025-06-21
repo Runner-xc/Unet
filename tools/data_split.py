@@ -36,13 +36,13 @@ def data_split_to_train_val_test(aug_args, data_path, flag, train_ratio=0.8, val
         test_data = df.iloc[train_len + val_len:]
 
         # 数据增强
-        train_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.imgsz, aug_times=aug_args.aug_times, data_csv=train_data, datasets_name="train")
+        train_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.imgsz, aug_times=aug_args.aug_times, data_csv=train_data, datasets_name="train", v=v)
         train_data = pd.DataFrame(train_path_dict)
 
-        val_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.imgsz, aug_times=aug_args.aug_times, data_csv=val_data, datasets_name="val")
+        val_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.imgsz, aug_times=aug_args.aug_times, data_csv=val_data, datasets_name="val", v=v)
         val_data = pd.DataFrame(val_path_dict)
 
-        test_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.imgsz, aug_times=aug_args.aug_times, data_csv=test_data, datasets_name="test")
+        test_path_dict = aug_data_processing(aug_args.root_path, size=aug_args.imgsz, aug_times=aug_args.aug_times, data_csv=test_data, datasets_name="test", v=v)
         test_data = pd.DataFrame(test_path_dict)
 
         # 保存数据集

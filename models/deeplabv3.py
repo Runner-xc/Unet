@@ -4,6 +4,7 @@ import torch
 from torch import nn, Tensor
 from torch.nn import functional as F
 from torchinfo import summary
+from torchvision.models import resnet50, resnet101, mobilenet_v3_large
 class IntermediateLayerGetter(nn.ModuleDict):
     """
     Module wrapper that returns intermediate layers from a model
@@ -276,12 +277,6 @@ def deeplabv3_mobilenetv3_large(aux, num_classes=21, pretrain_backbone=False):
     return model
 
 if __name__ == '__main__':
-    from utils.resnet_backbone import resnet50, resnet101
-    from utils.mobilenet_backbone import mobilenet_v3_large
-    net = deeplabv3_resnet50(aux=False, pretrain_backbone=False, num_classes=4)
+    net = deeplabv3_resnet101(aux=False, pretrain_backbone=False, num_classes=4)
     x = torch.randn(1,3,256,256)
     summary(net, (1, 3, 256, 256), device='cuda')
-
-else:
-    from models.utils.resnet_backbone import resnet50, resnet101
-    from models.utils.mobilenet_backbone import mobilenet_v3_large

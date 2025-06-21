@@ -5,13 +5,13 @@ from tensorboardX import SummaryWriter
  
 class A_UNet(nn.Module):
     def __init__(self, in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
         super(A_UNet, self).__init__()
         self.in_channels = in_channels
-        self.n_classes = n_classes
+        self.num_classes = num_classes
         self.base_channels = base_channels
         self.down = nn.MaxPool2d(kernel_size=2, stride=2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
@@ -52,7 +52,7 @@ class A_UNet(nn.Module):
         self.decoder_dropout2 = nn.Dropout2d(p=p*0.2 if p!=0 else 0)
 
         # 输出层
-        self.out_conv = nn.Conv2d(base_channels, n_classes, 1)
+        self.out_conv = nn.Conv2d(base_channels, num_classes, 1)
 
     def forward(self, x):
         e1 = self.encoder1(x)
@@ -105,7 +105,7 @@ class A_UNet(nn.Module):
 
 class A_UNetV2(nn.Module):
     def __init__(self, in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels=32,
                  ):
@@ -126,7 +126,7 @@ class A_UNetV2(nn.Module):
         self.decoder3 = AWConv(base_channels * 4,   base_channels)
         self.decoder4 = AWConv(base_channels * 2,   base_channels)
         # 输出层
-        self.out_conv = nn.Conv2d(base_channels, n_classes, 1)
+        self.out_conv = nn.Conv2d(base_channels, num_classes, 1)
 
         # encoder_dropout
         self.encoder_dropout1 = nn.Dropout2d(p=p*0.3 if p!=0 else 0)
@@ -181,13 +181,13 @@ class A_UNetV2(nn.Module):
 class A_UNetV3(A_UNetV2):
     def __init__(self, 
                 in_channels,
-                n_classes,
+                num_classes,
                 p,
                 base_channels=32,
                 ):
         super(A_UNetV3, self).__init__(
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels,
         )
@@ -203,13 +203,13 @@ class A_UNetV3(A_UNetV2):
 class A_UNetV4(A_UNetV3):
     def __init__(self, 
                 in_channels,
-                n_classes,
+                num_classes,
                 p,
                 base_channels=32,
                 ):
         super().__init__(
                  in_channels,
-                 n_classes,
+                 num_classes,
                  p, 
                  base_channels,
         )
@@ -231,8 +231,8 @@ class A_UNetV4(A_UNetV3):
         return l1_lambda * l1_loss + l2_lambda * l2_loss
     
 class A_UNetV5(A_UNetV4):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(A_UNetV5, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(A_UNetV5, self).__init__(in_channels, num_classes, p, base_channels)
         self.center_conv = Att_AWConv(base_channels*8, base_channels*8)
     def forward(self, x):
         return super().forward(x)
@@ -247,8 +247,8 @@ class A_UNetV5(A_UNetV4):
         return l1_lambda * l1_loss + l2_lambda * l2_loss
 
 class A_UNetV6(A_UNetV4):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(A_UNetV6, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(A_UNetV6, self).__init__(in_channels, num_classes, p, base_channels)
         self.center_conv = nn.Sequential(
             nn.Conv2d(base_channels*8, base_channels*8, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(base_channels*8),
@@ -268,8 +268,8 @@ class A_UNetV6(A_UNetV4):
         return l1_lambda * l1_loss + l2_lambda * l2_loss
 
 class Mamba_AUNet(A_UNetV4):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(Mamba_AUNet, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(Mamba_AUNet, self).__init__(in_channels, num_classes, p, base_channels)
         # bottleneck使用MambaLayer
         self.center_conv = nn.Sequential(
             nn.Conv2d(base_channels*8,base_channels*4, kernel_size=1),
@@ -279,8 +279,8 @@ class Mamba_AUNet(A_UNetV4):
     def forward(self, x):
         return super().forward(x)
 class Mamba_AUNetV3(A_UNetV4):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(Mamba_AUNetV3, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(Mamba_AUNetV3, self).__init__(in_channels, num_classes, p, base_channels)
         # bottleneck使用MambaLayer
         self.center_conv = nn.Sequential(
             nn.Conv2d(base_channels*8,base_channels*2, kernel_size=1),
@@ -291,8 +291,8 @@ class Mamba_AUNetV3(A_UNetV4):
         return super().forward(x)
     
 class Mamba_AUNetV4(A_UNetV4):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(Mamba_AUNetV4, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(Mamba_AUNetV4, self).__init__(in_channels, num_classes, p, base_channels)
         # bottleneck使用MambaLayer
         self.center_conv = nn.Sequential(
             nn.Conv2d(base_channels*8,base_channels*4, kernel_size=1),
@@ -303,8 +303,8 @@ class Mamba_AUNetV4(A_UNetV4):
         return super().forward(x)
 
 class Mamba_AUNetV5(A_UNetV4):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(Mamba_AUNetV5, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(Mamba_AUNetV5, self).__init__(in_channels, num_classes, p, base_channels)
         # bottleneck使用MambaLayer
         self.center_conv = nn.Sequential(
             nn.Conv2d(base_channels*8,base_channels*4, kernel_size=1),
@@ -323,8 +323,8 @@ class Mamba_AUNetV5(A_UNetV4):
         return l1_lambda * l1_loss + l2_lambda * l2_loss
     
 class Mamba_AUNetV6(A_UNetV4):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(Mamba_AUNetV6, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(Mamba_AUNetV6, self).__init__(in_channels, num_classes, p, base_channels)
         # 调整MambaLayer参数
         self.center_conv = nn.Sequential(
             nn.Conv2d(base_channels*8, base_channels*4, kernel_size=1),
@@ -343,8 +343,8 @@ class Mamba_AUNetV6(A_UNetV4):
         return l1_lambda * l1_loss + l2_lambda * l2_loss
 
 class Mamba_AUNetV2(Mamba_AUNet):
-    def __init__(self, in_channels, n_classes, p, base_channels=32):
-        super(Mamba_AUNetV2, self).__init__(in_channels, n_classes, p, base_channels)
+    def __init__(self, in_channels, num_classes, p, base_channels=32):
+        super(Mamba_AUNetV2, self).__init__(in_channels, num_classes, p, base_channels)
         self.center_conv = nn.Sequential(
             nn.Conv2d(base_channels*8,base_channels*2, kernel_size=1),
             MambaLayer(dim=base_channels*2, d_state=64, d_conv=8),
@@ -390,7 +390,7 @@ class Mamba_AUNetV2(Mamba_AUNet):
         return logits 
 if __name__ == '__main__':
     from utils import *    
-    model = A_UNetV4(in_channels=3, n_classes=4, p=0)
+    model = Mamba_AUNetV2(in_channels=3, num_classes=4, p=0)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
     summary(model, (8, 3, 256, 256))
