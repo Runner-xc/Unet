@@ -6,12 +6,18 @@ import numpy as np
 from torchvision import transforms as T
 import os
 import matplotlib.cm as cm
+from matplotlib.colors import ListedColormap
 from pathlib import Path
 import io
 import cv2
 
-WEIGHTS_FOLDER = "./weights"
+# 自定义颜色配置
+COLORS = ['#D3D3D3', '#1f77b4', '#63b931', '#d62728']  # 各分类对应颜色
+CUSTOM_CMAP = ListedColormap(COLORS)
 
+# 模型权重文件夹路径
+WEIGHTS_FOLDER = "./weights"
+# 模型参数配置
 MODEL_PARAMS = {
     "in_channels": 3,
     "num_classes": 4,
@@ -52,10 +58,15 @@ example_images = {
     "示例4": "./images/Image1 - 040.jpeg",
 }
 
+def hex_to_rgb(hex_color):
+    """将十六进制颜色转换为RGB元组"""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+# 生成颜色映射（使用自定义颜色）
 def generate_color_map(num_classes):
-    colormap = cm.get_cmap("viridis", num_classes)
-    colors = [colormap(i)[:3] for i in range(num_classes)]
-    return [(int(r*255), int(g*255), int(b*255)) for r, g, b in colors]
+    if num_classes != len(COLORS):
+        raise ValueError(f"颜色数量({len(COLORS)})与类别数({num_classes})不匹配")
+    return [hex_to_rgb(c) for c in COLORS]
 
 def load_model(model_name, weight_file_path=None):
     try:
