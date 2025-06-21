@@ -51,7 +51,7 @@ python rock_data.py
 - 自定义模型
 
 ```text
-# 权重文件结构
+# 权重目录结构
 ├── weights
 │   ├── model_names(unet)
 │   │    ├── *.pth 文件 
