@@ -14,4 +14,5 @@ weights/
 *.tif
 **/__pycache__
 
-!UNet.png
+!images/Image1 - 003.jpeg
+!images/Image1 - 003.png

@@ -5,11 +5,12 @@
 - 训练时自动根据不同数据集类型进行数据增强  
 - 构建了系列基于UNet框架网络的变体模型及其他架构分割网络
 - 训练时使用`tensorboard`及`Swanlab`实时记录训练日志
+- 使用`app.py`对训练好的模型进行快速预测
 
 ### UNet
 <div align="center">
 
-![alt text](assets/UNet.png)
+![alt text](images/UNet.png)
 
 </div>
 
@@ -42,4 +43,16 @@ pip install -r requirements.txt
 # 划分数据集,设置好数据地址
 cd Unet/utils
 python rock_data.py
+```
+
+##### 模型推理可视化
+![alt text](images/gradio.png)
+- 可自己上传权重及图片进行预测
+- 自定义模型
+
+```text
+# 权重文件结构
+├── weights
+│   ├── model_names(unet)
+│   │    ├── *.pth 文件 
 ```
