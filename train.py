@@ -1,721 +1,472 @@
+#!/usr/bin/env python3
+"""
+UNet分割网络训练脚本
+支持YAML配置文件和命令行参数两种配置方式
+"""
+
 import torch
 import datetime
-from torch.utils.data import DataLoader, Dataset
-from tools import *
 import argparse
 import os
-from torch.optim import Adam, SGD, RMSprop, AdamW
 import time
-from models import *
-from tabulate import tabulate
-from torch.utils.tensorboard import SummaryWriter
-import tools.transforms as T
-from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
-from torch.optim.lr_scheduler import LambdaLR
 import math
+from pathlib import Path
 from typing import Union, List, Dict
+
+from torch.utils.data import DataLoader
+from torch.optim import Adam, SGD, RMSprop, AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau, LambdaLR
+from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
 import swanlab
 import yaml
+
 from rich.console import Console
-from tools.cfg_loader import get_model_config, get_lossfn
+from tabulate import tabulate
+
+# 导入自定义模块
+from config import get_config
+from src.utils.cfg_loader import get_model_config, get_lossfn
+from src.utils.data_split_cfg import small_data_split_to_train_val_test_cfg, data_split_to_train_val_test_cfg
+from src.utils.data_split import SEM_DATA
+from src.utils.model_initial import init_weights_2d
+from src.utils.metrics import Metrics
+from src.utils import transforms
 
 color = Console()
-# 预处理
+
 class SODPresetTrain:
     def __init__(self, base_size: Union[int, List[int]], crop_size: int,
                  hflip_prob=0.5, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-        self.transforms = T.Compose([
-            T.ToTensor(),
-            # T.Resize(base_size),
-            # T.RandomCrop(crop_size),
-            # T.RandomHorizontalFlip(hflip_prob),
-            T.Normalize(mean=mean, std=std)
+        self.transforms = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize(base_size),
+            transforms.Normalize(mean=mean, std=std)
         ])
 
     def __call__(self, img, target):
-        data = self.transforms(img, target)
-        return data
+        return self.transforms(img, target)
 
 class SODPresetEval:
     def __init__(self, base_size: Union[int, List[int]], mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-        self.transforms = T.Compose([
-            T.ToTensor(),
-            # T.Resize(base_size),
-            T.Normalize(mean=mean, std=std),
+        self.transforms = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize(base_size),
+            transforms.Normalize(mean=mean, std=std),
         ])
 
     def __call__(self, img, target):
-        data = self.transforms(img, target)
-        return data  
-    
-# ===================== 表情符号配置 =====================
+        return self.transforms(img, target)
+
+# 表情符号配置
 PARAM_ICONS = {
     'model': '📦', 'lr': '📚', 'wd': '⚖️', 'dropout': '☔',
     'l1_lambda': 'λ¹', 'l2_lambda': 'λ²', 'scheduler': '🔄',
     'loss_fn': '💥', 'best_epoch': '🏆', 'time': '🕒', 'cost': '⏳'
-}   
-
-os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
-detailed_time_str = time.strftime("%Y-%m-%d_%H-%M-%S")
+}
 
 def format_epoch_header(epoch, end_epoch):
-                return f"\n🚀✨========= Epoch {epoch+1}/{end_epoch} =========✨🚀\n"
+    return f"\n🚀✨========= Epoch {epoch+1}/{end_epoch} =========✨🚀\n"
 
-def build_params_block(args):
+def build_params_block(cfg):
     return (
-        f"{PARAM_ICONS['model']} model : {args.model}\n"
-        f"{PARAM_ICONS['lr']} lr : {args.lr}\n"
-        f"{PARAM_ICONS['wd']} wd : {args.wd}\n"
-        f"{PARAM_ICONS['dropout']} dropout : {args.dropout_p}\n"
-        f"{PARAM_ICONS['l1_lambda']} l1_lambda : {args.l1_lambda}\n"
-        f"{PARAM_ICONS['l2_lambda']} l2_lambda : {args.l2_lambda}\n"
-        f"{PARAM_ICONS['loss_fn']} loss_fn : {args.loss_fn}\n"
-        f"{PARAM_ICONS['scheduler']} scheduler : {args.scheduler}\n"        
-                )
-def check_initialization(
-    model: nn.Module,
-    threshold: float = 10.0,
-    verbose: bool = True
-) -> Dict[str, Dict]:
-    """
-    Args:
-        model: 待检测的PyTorch模型
-        threshold: 判断参数范围是否异常的阈值
-        verbose: 是否打印详细信息
-    
-    Returns:
-        包含各检测项结果的字典
-    """
-    results = {"parameters": {}}
-    overall_status = True
-    
-    if verbose:
-        color.print("\n=== 参数初始化检查 ===")
-    
-    for name, param in model.named_parameters():
-        param_data = param.detach().cpu()
-        
-        # 基础统计
-        min_val = param_data.min().item()
-        max_val = param_data.max().item()
-        mean = param_data.mean().item()
-        std = param_data.std().item()
-        
-        # 检查NaN和Inf
-        has_nan = torch.isnan(param_data).any().item()
-        has_inf = torch.isinf(param_data).any().item()
-        
-        # 判断参数范围是否合理
-        range_valid = (-threshold <= min_val <= max_val <= threshold)
-        
-        # 针对不同层类型的特殊检查
-        layer_type = type(model.get_submodule(name.split('.')[0])).__name__
-        layer_specific_issues = []
-        
-        if layer_type == 'BatchNorm2d':
-            if 'weight' in name and abs(1.0 - mean) > 0.1:
-                layer_specific_issues.append("BatchNorm权重均值应接近1")
-            if 'bias' in name and abs(mean) > 0.1:
-                layer_specific_issues.append("BatchNorm偏置均值应接近0")
-        
-        is_valid = not (has_nan or has_inf) and range_valid and not layer_specific_issues
-        
-        # 记录结果
-        results["parameters"][name] = {
-            "min": min_val,
-            "max": max_val,
-            "mean": mean,
-            "std": std,
-            "has_nan": has_nan,
-            "has_inf": has_inf,
-            "range_valid": range_valid,
-            "layer_specific_issues": layer_specific_issues,
-            "is_valid": is_valid
-        }
-        
-        if verbose:
-            status = "✅" if is_valid else "❌"
-            color.print(f"{name} ({layer_type}): {status} 均值={mean:.4f}, 标准差={std:.4f}, 范围=[{min_val:.4f}, {max_val:.4f}]")
-            if has_nan:
-                color.print(f"  ⚠️ 包含NaN值")
-            if has_inf:
-                color.print(f"  ⚠️ 包含无穷大值")
-            if not range_valid:
-                color.print(f"  ⚠️ 参数范围超出阈值 [-{threshold}, {threshold}]")
-            if layer_specific_issues:
-                color.print(f"  ⚠️ {'；'.join(layer_specific_issues)}")
-        
-        overall_status = overall_status and is_valid
-    
-    if verbose:
-        color.print("\n=== 初始化整体评估 ===")
-        color.print(f"状态: {'✅ 合理' if overall_status else '❌ 存在问题'}")
-    
-    return results
+        f"{PARAM_ICONS['model']} model : {cfg.MODEL.NAME}\n"
+        f"{PARAM_ICONS['lr']} lr : {cfg.TRAIN.OPTIMIZER.BASE_LR}\n"
+        f"{PARAM_ICONS['wd']} wd : {cfg.TRAIN.OPTIMIZER.WEIGHT_DECAY}\n"
+        f"{PARAM_ICONS['dropout']} dropout : {cfg.MODEL.DROPOUT_P}\n"
+        f"{PARAM_ICONS['l1_lambda']} l1_lambda : {cfg.TRAIN.LOSS.L1_LAMBDA}\n"
+        f"{PARAM_ICONS['l2_lambda']} l2_lambda : {cfg.TRAIN.LOSS.L2_LAMBDA}\n"
+        f"{PARAM_ICONS['loss_fn']} loss_fn : {cfg.TRAIN.LOSS.NAME}\n"
+        f"{PARAM_ICONS['scheduler']} scheduler : {cfg.TRAIN.SCHEDULER.NAME}\n"
+    )
 
-def load_yaml_config(yaml_path):
-    with open(yaml_path, 'r') as f:
-        config = yaml.safe_load(f)
-    return config
-
-def update_args_with_yaml(args, yaml_path):
-    config = load_yaml_config(yaml_path)
-    for key, value in config.items():
-        setattr(args, key, value)
-    return args
-
-def main(args):
-    """——————————————————————————————————————————————加载yaml配置———————————————————————————————————————————————"""
-    if args.config_yaml:
-        args = update_args_with_yaml(args, args.config_yaml)
-
-    """——————————————————————————————————————————————打印初始配置———————————————————————————————————————————————"""
-    # 将args转换为字典
-    params = vars(args)
-
-    # 映射参数名称到参数
-    param_map = {
-        'lr'            : '1. lr',
-        'wd'            : '2. wd',
-        'l1_lambda'     : '3. l1_lambda',
-        'l2_lambda'     : '4. l2_lambda',
-        'elnloss'       : '5. elnloss',
-        'dropout_p'     : '6. dropout_p',
-        'model'         : '7. model',
-        'loss_fn'       : '8. loss_fn',
-        'optimizer'     : '9. optimizer',
-        'scheduler'     : '10. scheduler',
-        'Tmax'          : '11. Tmax',
-        'eta_min'       : '12. eta_min',
-        'save_flag'     : '13. save_flag',
-        'batch_size'    : '14. batch_size',
-        'num_small_data': '15. num_small_data',
-        'eval_interval' : '16. eval_interval',
-        'split_flag'    : '17. split_flag',
-        'resume'        : '18. resume'
-    }
-
-    # 筛选需要打印的参数
-    color.printed_params = list(param_map.keys())
-    params_dict = {}
-    params_dict['Parameter'] = [param_map[p] for p in color.printed_params]
-    params_dict['Value'] = [str(params[p]) for p in color.printed_params if p in params]
-
-    # 打印参数
-    params_header = ['Parameter', 'Value']
-    # color.print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
-    
-    """——————————————————————————————————————————————记录修改配置———————————————————————————————————————————————"""
-    initial_time = time.time()
-    if args.mdf_params:    
-        x = input("是否需要修改配置参数：\n 0. 不修改, 继续。 \n\
-请输入需要修改的参数序号（int）： ")
-        
-        args = param_modification.param_modification(args, x)
-    save_modification_path = f"{args.training_results_path}/{args.modification}/{args.model}/{args.loss_fn}-{args.scheduler}"
-
-    """——————————————————————————————————————————————加载数据集——————————————————————————————————————————————"""
-    # 定义设备
-    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    batch_size = args.batch_size
-
-    train_ratio = args.train_ratio
-    val_ratio = args.val_ratio   
-
-    # 划分数据集
-    if args.num_small_data is not None:
-        train_datasets, val_datasets, test_datasets = data_split.small_data_split_to_train_val_test(args.data_path, 
-                                                                                   num_small_data = args.num_small_data, 
-                                                                                   # train_ratio=0.8, 
-                                                                                   # val_ratio=0.1, 
-                                                                                   flag           = args.split_flag) 
-    
-    else:
-        train_datasets, val_datasets, test_datasets = data_split.data_split_to_train_val_test(args, args.data_path, train_ratio=train_ratio, val_ratio=val_ratio,
-                            flag=args.split_flag)
-
-    train_ratio = args.train_ratio
-    val_ratio = args.val_ratio   
-
-    # 读取数据集
-    train_datasets = SEM_DATA(train_datasets, 
-                            transforms=SODPresetTrain((256, 256), crop_size=256))
-    
-    val_datasets = SEM_DATA(val_datasets, 
-                            transforms=SODPresetEval((256, 256)))
-    
-    num_workers = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])
-    train_dataloader = DataLoader(train_datasets, 
-                                batch_size=batch_size, 
-                                shuffle=True, 
-                                num_workers=num_workers,
-                                pin_memory=True)
-    
-    val_dataloader = DataLoader(val_datasets, 
-                                batch_size=8, 
-                                shuffle=False, 
-                                num_workers=num_workers,
-                                pin_memory=True)
-    """——————————————————————————————————————————————模型 配置———————————————————————————————————————————————"""   
-    # 初始化模型
-    model = get_model_config(args)
+def setup_model(cfg, device):
+    """设置模型"""
+    model = get_model_config(cfg).to(device)
     model.apply(init_weights_2d)
-    model.to(device)
-    check_initialization(model)
-    model_info = str(summary(model, (1, 3, 256, 256)))  
-    
-    """——————————————————————————————————————————————优化器 调度器——————————————————————————————————————————————"""
-    # 优化器 
-    optim_map = {
-            'AdamW' : lambda: AdamW(model.parameters(), 
-                                    args.lr, 
-                                    weight_decay=args.wd,
-                                    betas=(0.95, 0.999),
-                                    eps=1e-8
-                                    ),
+    return model
 
-            'SGD'   : lambda:   SGD(model.parameters(), 
-                                    args.lr, 
-                                    momentum=0.9, 
-                                    weight_decay=args.wd),
-                               
-          'RMSprop' : lambda:RMSprop(model.parameters(), 
-                                    args.lr, 
-                                    alpha=0.9, 
-                                    eps=1e-8, 
-                                    weight_decay=args.wd)
-        }
-    optimizer = optim_map.get(args.optimizer, optim_map['AdamW'])()  
-        
-    # 调度器
-    if args.scheduler == 'CosineAnnealingLR':
-        # 计算总batch数和warmup步数
-        num_batches_per_epoch = len(train_dataloader)
-        warmup_steps = args.warmup_epochs * num_batches_per_epoch  # 总预热步数
-        Tmax_steps = args.Tmax * num_batches_per_epoch  # 将Tmax从epoch转换为step
-        
-        # 获取初始学习率
-        lr_initial = optimizer.param_groups[0]['lr']
-
-        # 定义带Warmup的Lambda调度器
-        scheduler = LambdaLR(
-            optimizer,
-            lr_lambda=lambda step: (
-                # Warmup阶段：线性增长
-                (step / warmup_steps) if step < warmup_steps
-                # 正常阶段：余弦退火
-                else (args.eta_min + (lr_initial - args.eta_min) * 
-                    (1 + math.cos(math.pi * (step - warmup_steps) / Tmax_steps)) / 2) / lr_initial
-            ),
-            last_epoch=-1)  # 初始步数从0开始 
-          
-    elif args.scheduler == 'ReduceLROnPlateau':
-        scheduler = ReduceLROnPlateau(optimizer, 
-                                      mode='min', 
-                                      factor=0.1, 
-                                      patience=5, 
-                                      threshold=1e-4, 
-                                      threshold_mode='rel', 
-                                      cooldown=0, 
-                                      min_lr=0, 
-                                      eps=1e-8)
-    else:
-        color.print(f"wrong scaler name[red]{args.scheduler}[/red]")
-    
-    loss_fn = get_lossfn(args)
-    scaler = torch.amp.GradScaler() if args.amp else None
-    metrics = Metrics(args.class_names)
-    
-    # 日志保存路径
-    save_logs_path = f"{args.training_results_path}/{args.tb_logs}/{args.model}/{args.loss_fn}-{args.scheduler}"
-    if args.save_flag:
-        if args.elnloss:
-            log_path = f'{save_logs_path}_{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}'
-            os.makedirs(log_path, exist_ok=True)
-            writer = SummaryWriter(log_path)
-        else:
-            log_path = f'{save_logs_path}_{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}'
-            os.makedirs(log_path, exist_ok=True)
-            writer = SummaryWriter(log_path)
-        
-        # 转换参数为字典并过滤需要记录的参数
-        config = vars(args)
-        excluded_params = ['data_path', 'runing_logs','training_results_path', 
-                         'weight', 'tb_logs', 'modification',
-                         'device', 'resume', 'save_flag', 'split_flag', 'mdf_params']
-        config = {k: v for k, v in config.items() if k not in excluded_params}
-        
-        # 初始化SwanLab（整个训练过程只初始化一次）
-        swanlab.init(
-            project="UNet",
-            experiment_name=f"{args.model}-{args.loss_fn}-{detailed_time_str}",
-            config=config,
+def setup_optimizer(cfg, model):
+    """设置优化器"""
+    if cfg.TRAIN.OPTIMIZER.NAME == 'AdamW':
+        return AdamW(
+            model.parameters(), 
+            lr=cfg.TRAIN.OPTIMIZER.BASE_LR, 
+            weight_decay=cfg.TRAIN.OPTIMIZER.WEIGHT_DECAY, 
+            betas=cfg.TRAIN.OPTIMIZER.ADAMW_BETAS
         )
-    
-    """——————————————————————————————————————————————参数 列表———————————————————————————————————————————————"""
-    # 记录修改后的参数
-    if args.elnloss:
-        mdf_args_log_name = f"{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}_{detailed_time_str}.md"
+    elif cfg.TRAIN.OPTIMIZER.NAME == 'SGD':
+        return SGD(
+            model.parameters(),
+            lr=cfg.TRAIN.OPTIMIZER.BASE_LR,
+            momentum=cfg.TRAIN.OPTIMIZER.SGD_MOMENTUM,
+            weight_decay=cfg.TRAIN.OPTIMIZER.WEIGHT_DECAY
+        )
+    elif cfg.TRAIN.OPTIMIZER.NAME == 'RMSprop':
+        return RMSprop(
+            model.parameters(),
+            lr=cfg.TRAIN.OPTIMIZER.BASE_LR,
+            weight_decay=cfg.TRAIN.OPTIMIZER.WEIGHT_DECAY
+        )
     else:
-        mdf_args_log_name = f"{args.optimizer}-lr_{args.lr}-wd_{args.wd}_{detailed_time_str}.md"
-    params = vars(args)
-    params_dict['Parameter'] = color.printed_params
-    params_dict['Value'] = [str(params[p]) for p in color.printed_params]
-    contents = tabulate(params_dict, headers=params_header, tablefmt="grid")
+        raise NotImplementedError(f"Optimizer {cfg.TRAIN.OPTIMIZER.NAME} not implemented.")
 
-    mdf = os.path.join(save_modification_path, mdf_args_log_name)
-    if not os.path.exists(os.path.dirname(mdf)):
-        os.makedirs(os.path.dirname(mdf))
-    if args.save_flag:
-        write_experiment_log.write_exp_logs(mdf, contents) 
+def setup_scheduler(cfg, optimizer, train_loader):
+    """设置学习率调度器"""
+    if cfg.TRAIN.SCHEDULER.NAME == 'CosineAnnealingLR':
+        num_batches_per_epoch = len(train_loader)
+        warmup_steps = cfg.TRAIN.SCHEDULER.WARMUP_EPOCHS * num_batches_per_epoch
+        Tmax_steps = cfg.TRAIN.SCHEDULER.COSINE_T_MAX * num_batches_per_epoch
+        lr_initial = cfg.TRAIN.OPTIMIZER.BASE_LR
+        eta_min = cfg.TRAIN.SCHEDULER.COSINE_ETA_MIN
+        
+        return LambdaLR(
+            optimizer, 
+            lr_lambda=lambda step: (
+                (step / warmup_steps) if step < warmup_steps
+                else (eta_min + (lr_initial - eta_min) * 
+                     (1 + math.cos(math.pi * (step - warmup_steps) / Tmax_steps)) / 2) / lr_initial
+            )
+        )
+    elif cfg.TRAIN.SCHEDULER.NAME == 'ReduceLROnPlateau':
+        return ReduceLROnPlateau(
+            optimizer, 
+            mode='min', 
+            factor=cfg.TRAIN.SCHEDULER.PLATEAU_FACTOR, 
+            patience=cfg.TRAIN.SCHEDULER.PLATEAU_PATIENCE
+        )
+    else:
+        raise NotImplementedError(f"Scheduler {cfg.TRAIN.SCHEDULER.NAME} not implemented.")
+
+def setup_data_loaders(cfg):
+    """设置数据加载器"""
+    train_transforms = SODPresetTrain(
+        cfg.DATA.IMG_SIZE, 
+        cfg.DATA.IMG_SIZE, 
+        mean=cfg.DATA.TRANSFORMS.MEAN, 
+        std=cfg.DATA.TRANSFORMS.STD
+    )
+    eval_transforms = SODPresetEval(
+        cfg.DATA.IMG_SIZE, 
+        mean=cfg.DATA.TRANSFORMS.MEAN, 
+        std=cfg.DATA.TRANSFORMS.STD
+    )
+
+    # 数据集划分
+    if cfg.DATA.NUM_SMALL_DATA:
+        train_csv, val_csv, _ = small_data_split_to_train_val_test_cfg(cfg)
+    else:
+        train_csv, val_csv, _ = data_split_to_train_val_test_cfg(cfg)
     
-    """参数列表"""
-    params = vars(args)
-    params_dict = {}
-    params_dict['Parameter'] = [str(p[0]) for p in list(params.items())]
-    params_dict['Value'] = [str(p[1]) for p in list(params.items())]
-    params_header = ['Parameter', 'Value']
-    """打印参数"""
-    color.print(tabulate(params_dict, headers=params_header, tablefmt="grid"))
-            
-    """——————————————————————————————————————————————训练 验证——————————————————————————————————————————————"""
-    start_epoch = args.start_epoch
-    end_epoch = args.end_epoch
-  
-    best_mean_loss, current_miou = float('inf'), 0.0
-    best_epoch = 0 
-    patience = 0 
-    current_mean_loss = float('inf')
-    loss_names = args.class_names + ['total_loss']
+    train_dataset = SEM_DATA(train_csv, transforms=train_transforms)
+    val_dataset = SEM_DATA(val_csv, transforms=eval_transforms)
 
-    """断点续传"""    
-    if args.resume:
-        torch.serialization.add_safe_globals([argparse.Namespace])
-        checkpoint = torch.load(args.resume, weights_only=True)
-        model.load_state_dict(checkpoint['model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        scheduler.load_state_dict(checkpoint['scheduler'])
-        scheduler.last_epoch = checkpoint['step']
-        best_mean_loss = checkpoint['best_mean_loss']
-        start_epoch = checkpoint['best_epoch']
-        best_epoch = checkpoint['best_epoch']
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=cfg.DATA.BATCH_SIZE, 
+        shuffle=True, 
+        num_workers=cfg.SYSTEM.NUM_WORKERS, 
+        pin_memory=cfg.SYSTEM.PIN_MEMORY
+    )
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=cfg.DATA.VALID_BATCH_SIZE, 
+        shuffle=False, 
+        num_workers=cfg.SYSTEM.NUM_WORKERS, 
+        pin_memory=cfg.SYSTEM.PIN_MEMORY
+    )
+
+    return train_loader, val_loader
+
+def setup_logging(cfg, detailed_time_str):
+    """设置日志系统"""
+    # 创建输出目录
+    base_output_path = f"{cfg.OUTPUT}/{cfg.MODEL.NAME}/{cfg.TRAIN.LOSS.NAME}-{cfg.TRAIN.SCHEDULER.NAME}"
+    if cfg.TRAIN.LOSS.ELN_LOSS:
+        experiment_folder = f"{cfg.TRAIN.OPTIMIZER.NAME}-lr_{cfg.TRAIN.OPTIMIZER.BASE_LR}-l1_{cfg.TRAIN.LOSS.L1_LAMBDA}-l2_{cfg.TRAIN.LOSS.L2_LAMBDA}"
+    else:
+        experiment_folder = f"{cfg.TRAIN.OPTIMIZER.NAME}-lr_{cfg.TRAIN.OPTIMIZER.BASE_LR}-wd_{cfg.TRAIN.OPTIMIZER.WEIGHT_DECAY}"
+    
+    output_dir = os.path.join(base_output_path, experiment_folder, detailed_time_str)
+    weights_path = os.path.join(output_dir, "weights")
+    logs_path = os.path.join(output_dir, "logs")
+    
+    if cfg.LOG.SAVE_FLAG:
+        os.makedirs(weights_path, exist_ok=True)
+        os.makedirs(logs_path, exist_ok=True)
+
+    # TensorBoard
+    writer = None
+    if cfg.LOG.USE_TENSORBOARD and cfg.LOG.SAVE_FLAG:
+        writer = SummaryWriter(log_dir=os.path.join(logs_path, "tb"))
+
+    # SwanLab
+    swanlab_active = False
+    if cfg.LOG.USE_SWANLAB and cfg.LOG.SAVE_FLAG:
+        swanlab.init(
+            project="UNet-Segmentation",
+            experiment_name=f"{cfg.MODEL.NAME}-{cfg.TAG}-{detailed_time_str}",
+            config=yaml.safe_load(cfg.dump())
+        )
+        swanlab_active = True
+
+    return output_dir, weights_path, logs_path, writer, swanlab_active
+
+def train_one_epoch(model, optimizer, train_loader, device, loss_fn, scaler, metrics, scheduler, cfg):
+    """训练一个epoch"""
+    model.train()
+    train_losses = [0.0] * (len(cfg.DATA.CLASS_NAMES) + 1)  # 每个类别 + 总损失
+    metric_list = [0.0] * 6  # 6个指标
+    
+    for data in train_loader:
+        images, masks = data[0][0].to(device), data[0][1].to(device)
+        
+        optimizer.zero_grad()
+        
+        if scaler:
+            with torch.amp.autocast(device_type='cuda'):
+                outputs = model(images)
+                losses = loss_fn(outputs, masks.long().squeeze(1))
+        else:
+            outputs = model(images)
+            losses = loss_fn(outputs, masks.long().squeeze(1))
+        
+        # 计算总损失
+        if isinstance(losses, list):
+            total_loss = sum(losses)
+            for i, loss in enumerate(losses):
+                train_losses[i] += loss.item()
+        else:
+            total_loss = losses
+            train_losses[-1] += total_loss.item()
+        
+        # 添加正则化
+        if cfg.TRAIN.LOSS.ELN_LOSS:
+            l1_reg = sum(param.abs().sum() for param in model.parameters())
+            l2_reg = sum((param**2).sum() for param in model.parameters())
+            total_loss += cfg.TRAIN.LOSS.L1_LAMBDA * l1_reg + cfg.TRAIN.LOSS.L2_LAMBDA * l2_reg
+        
+        if scaler:
+            scaler.scale(total_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            total_loss.backward()
+            optimizer.step()
+        
+        # 更新调度器
+        if hasattr(scheduler, 'step') and cfg.TRAIN.SCHEDULER.NAME == 'CosineAnnealingLR':
+            scheduler.step()
+        
+        # 计算指标
+        with torch.no_grad():
+            pred_mask = torch.softmax(outputs, dim=1)
+            batch_metrics = metrics.update(pred_mask, masks.long().squeeze(1))
+            for i in range(6):
+                metric_list[i] += batch_metrics[i]
+    
+    return train_losses, metric_list
+
+def validate(model, val_loader, device, loss_fn, metrics, cfg):
+    """验证"""
+    model.eval()
+    val_losses = [0.0] * (len(cfg.DATA.CLASS_NAMES) + 1)
+    metric_list = [0.0] * 6
+    
+    with torch.no_grad():
+        for data in val_loader:
+            images, masks = data[0][0].to(device), data[0][1].to(device)
+            
+            outputs = model(images)
+            losses = loss_fn(outputs, masks.long().squeeze(1))
+            
+            if isinstance(losses, list):
+                for i, loss in enumerate(losses):
+                    val_losses[i] += loss.item()
+            else:
+                val_losses[-1] += losses.item()
+            
+            pred_mask = torch.softmax(outputs, dim=1)
+            batch_metrics = metrics.update(pred_mask, masks.long().squeeze(1))
+            for i in range(6):
+                metric_list[i] += batch_metrics[i]
+    
+    return val_losses, metric_list
+
+def main(cfg):
+    """主训练函数"""
+    color.print("🚀======= 开始训练 =======🚀")
+    color.print(cfg)
+    
+    # 设置设备和时间戳
+    device = torch.device(cfg.SYSTEM.DEVICE if torch.cuda.is_available() else "cpu")
+    detailed_time_str = time.strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # 设置模型、优化器等组件
+    model = setup_model(cfg, device)
+    model_info = str(summary(model, (1, 3, cfg.DATA.IMG_SIZE, cfg.DATA.IMG_SIZE)))
+    
+    train_loader, val_loader = setup_data_loaders(cfg)
+    optimizer = setup_optimizer(cfg, model)
+    scheduler = setup_scheduler(cfg, optimizer, train_loader)
+    loss_fn = get_lossfn(cfg)
+    scaler = torch.amp.GradScaler(enabled=cfg.TRAIN.AMP)
+    metrics = Metrics(cfg.DATA.CLASS_NAMES)
+    
+    # 设置日志
+    output_dir, weights_path, logs_path, writer, swanlab_active = setup_logging(cfg, detailed_time_str)
+    
+    # 训练循环
+    start_epoch = cfg.TRAIN.START_EPOCH
+    best_loss = float('inf')
+    best_epoch = -1
+    patience = 0
+    
+    # 断点续传
+    if cfg.MODEL.RESUME:
+        checkpoint = torch.load(cfg.MODEL.RESUME, weights_only=True)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        best_loss = checkpoint['best_loss']
+        start_epoch = checkpoint['epoch']
+        best_epoch = checkpoint['epoch']
         color.print(f"🌐Resume from epoch: [blue]{start_epoch}[/blue]")
     
-    """训练"""   
-    for epoch in range(start_epoch, end_epoch):
+    initial_time = time.time()
+    
+    for epoch in range(start_epoch, cfg.TRAIN.EPOCHS):
+        epoch_start_time = time.time()
         
-        color.print(f"\n ✈️»»——————————————««  Epoch {epoch+1}/{end_epoch}  »»——————————————««✈️\n")
-        color.print(f"🌈 ---- Training ---- 🌈")
-        # 记录时间
-        start_time = time.time()
         # 训练
-        train_losses, T_Metric_list = train_one_epoch(model, 
-                                                    optimizer, 
-                                                    epoch, 
-                                                    train_dataloader, 
-                                                    device=device, 
-                                                    loss_fn=loss_fn, 
-                                                    scaler=scaler,
-                                                    Metric=metrics,
-                                                    scheduler = scheduler,
-                                                    class_names=args.class_names,
-                                                    elnloss=args.elnloss,     #  Elastic Net正则化
-                                                    l1_lambda=args.l1_lambda,
-                                                    l2_lambda=args.l2_lambda) # loss_fn=loss_fn, 
+        color.print(format_epoch_header(epoch, cfg.TRAIN.EPOCHS))
+        color.print(f"🌈 ---- Training ---- 🌈")
         
-        # 求平均
-        average_train_losses = [train_losses[i] / len(train_dataloader) for i in range(len(train_losses))]
-        train_total_loss = average_train_losses[-1]
+        train_losses, train_metrics_list = train_one_epoch(
+            model, optimizer, train_loader, device, loss_fn, scaler, metrics, scheduler, cfg
+        )
         
-        # 评价指标 metrics = [recall, precision, dice, f1_score]
-        train_metrics               ={}
-        train_metrics["Loss"]       = average_train_losses
-        train_metrics["Recall"]     = T_Metric_list[0]
-        train_metrics["Precision"]  = T_Metric_list[1]
-        train_metrics["Dice"]       = T_Metric_list[2]
-        train_metrics["F1_scores"]  = T_Metric_list[3]
-        train_metrics["mIoU"]       = T_Metric_list[4]
-        train_metrics["Accuracy"]   = T_Metric_list[5]
+        avg_train_losses = [l / len(train_loader) for l in train_losses]
+        avg_train_total_loss = avg_train_losses[-1]
         
-        # 结束时间
-        end_time = time.time()
-        train_cost_time = end_time - start_time
-
-        # 打印
-        for loss, name in zip(average_train_losses ,loss_names):
-            color.print(f"💧train_{name}_loss: [yellow]{loss:.3f}[/yellow]")
-        color.print(f"⏳train_cost_time: [white]{train_cost_time:.2f}[/white]s")
-        
-
-        """验证"""
-        if epoch % args.eval_interval == 0 or epoch == end_epoch - 1:
-            color.print("\n\n")
+        # 验证
+        if epoch % cfg.TRAIN.EVAL_INTERVAL == 0 or epoch == cfg.TRAIN.EPOCHS - 1:
             color.print(f"🌈 ---- Validation ---- 🌈")
-            # 记录验证开始时间
-            start_time = time.time()
-            # 每间隔eval_interval个epoch验证一次，减少验证频率节省训练时间
-            val_losses, Metric_list = evaluate(model, device, val_dataloader, loss_fn, metrics, class_names=args.class_names) # val_loss, recall, precision, f1_scores
-
-            # 求平均
-            average_val_losses = [val_losses[i] / len(val_dataloader) for i in range(len(val_losses))]
-            val_total_loss = average_val_losses[-1]
             
-            # 获取当前学习率
-            current_lr = scheduler.get_last_lr()[0]  
-
-            # 评价指标 metrics = [recall, precision, dice, f1_score]
-            val_metrics                 = {}
-            val_metrics["Loss"]         = average_val_losses
-            val_metrics["Recall"]       = Metric_list[0]
-            val_metrics["Precision"]    = Metric_list[1]
-            val_metrics["Dice"]         = Metric_list[2]
-            val_metrics["F1_scores"]    = Metric_list[3]
-            val_metrics["mIoU"]         = Metric_list[4]
-            val_metrics["Accuracy"]     = Metric_list[5]
-            # 验证====结束时间
-            end_time = time.time()
-            val_cost_time = end_time - start_time
-
-            # 打印结果
-            for loss, name in zip(average_val_losses ,loss_names):
-                color.print(f"🔥val_{name}_loss: [blue]{loss:.3f}[/blue]")
-            color.print(f"🕒val_cost_time: [white]{val_cost_time:.2f}[/white]s")
-            color.print(f"🚀Current learning rate: [green]{current_lr:.7f}[/green]")
+            val_losses, val_metrics_list = validate(model, val_loader, device, loss_fn, metrics, cfg)
+            avg_val_losses = [l / len(val_loader) for l in val_losses]
+            avg_val_total_loss = avg_val_losses[-1]
             
-            # 记录日志
-            tb = args.tb
-            if tb:
-                writing_logs(writer, train_metrics, val_metrics, epoch, loss_names) 
-                # 新增SwanLab日志记录
-                swanlab.log({
-                    # 训练指标
-                    **{f"train/{name}_loss": train_loss for name, train_loss in zip(loss_names, average_train_losses)},
-                    "train/recall": train_metrics["Recall"][-1],
-                    "train/precision": train_metrics["Precision"][-1],
-                    "train/dice": train_metrics["Dice"][-1],
-                    "train/f1_scores": train_metrics["F1_scores"][-1],
-                    "train/mIoU": train_metrics["mIoU"][-1],
-                    "train/accuracy": train_metrics["Accuracy"][-1],
-                    # 验证指标
-                    **{f"val/{name}_loss": val_loss for name, val_loss in zip(loss_names, average_val_losses)},
-                    "val/recall": val_metrics["Recall"][-1],
-                    "val/precision": val_metrics["Precision"][-1],
-                    "val/dice": val_metrics["Dice"][-1],
-                    "val/f1_scores": val_metrics["F1_scores"][-1],
-                    "val/mIoU": val_metrics["mIoU"][-1],
-                    "val/accuracy": val_metrics["Accuracy"][-1],            
-                    # 学习率
+            current_lr = optimizer.param_groups[0]['lr']
+            epoch_end_time = time.time()
+            
+            # 日志记录
+            if writer:
+                loss_names = cfg.DATA.CLASS_NAMES + ['total_loss']
+                for i, name in enumerate(loss_names):
+                    writer.add_scalar(f'Loss_train/{name}', avg_train_losses[i], epoch)
+                    writer.add_scalar(f'Loss_val/{name}', avg_val_losses[i], epoch)
+                writer.add_scalar('Learning_Rate', current_lr, epoch)
+            
+            if swanlab_active:
+                log_data = {
+                    **{f"train/{name}_loss": loss for name, loss in zip(cfg.DATA.CLASS_NAMES + ['total'], avg_train_losses)},
+                    **{f"val/{name}_loss": loss for name, loss in zip(cfg.DATA.CLASS_NAMES + ['total'], avg_val_losses)},
                     "learning_rate": current_lr,
-                
-                    # 时间指标
-                    "time/epoch_time": train_cost_time + val_cost_time
-                }, step=epoch)              
-                """-------------------------TXT--------------------------------------------------------"""        
-                writer.add_text('val/Metrics', 
-                                f"optim: {args.optimizer}, lr: {args.lr}, wd: {args.wd}, l1_lambda: {args.l1_lambda}, l2_lambda: {args.l2_lambda}"+ '\n'
-                                f"model: {args.model}, loss_fn: {args.loss_fn}, scheduler: {args.scheduler}"
-                                )
-                if epoch == 5:
-                    run_tensorboard(log_path)               
+                    "epoch": epoch + 1
+                }
+                swanlab.log(log_data)
             
-            # 保存指标
-            if best_mean_loss >= val_total_loss:
-                best_mean_loss = val_total_loss
-                best_epoch = epoch + 1
-        
-            # ===================== 静态配置 =====================
-            metrics_table_header = ['Metrics_Name', 'total'] + args.class_names # 原始表头
-            metrics_table_left = ['Dice', 'Recall', 'Precision', 'F1_scores', 'mIoU', 'Accuracy']        
-
-            epoch_s = format_epoch_header(epoch, end_epoch)
-            params_block = build_params_block(args)
-
-            # 指标表格
-            metrics_dict = {name: val_metrics[name] for name in metrics_table_left}
+            # 控制台输出
+            metrics_table_header = ['Metrics'] + cfg.DATA.CLASS_NAMES + ['Total']
+            metrics_table_left = ['mIoU', 'Dice', 'F1_scores', 'Recall', 'Precision', 'Accuracy']
             metrics_table = [
-                [name,  
-                f"{metrics_dict[name][-1]:.5f}" ,  # 平均
-                *[f"{metrics_dict[name][i]:.5f}" for i in range(len(args.class_names))],
-                ]   
-                for name in metrics_table_left
+                [name] + [f"{val:.4f}" for val in val_metrics_list[i]]
+                for i, name in enumerate(metrics_table_left)
             ]
-
-            training_info = (
-                f"{PARAM_ICONS['time']} time : {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')}"
-                f"\n🍎 Train Loss: {train_total_loss:.3f} "
-                f"| 🍏 Val Loss: {val_total_loss:.3f}\n"
-                f"{PARAM_ICONS['best_epoch']} best_epoch : {best_epoch}\n"
-                f"{PARAM_ICONS['cost']} val_cost_time : {val_cost_time/60:.2f} mins"
+            
+            if avg_val_total_loss < best_loss:
+                best_loss = avg_val_total_loss
+                best_epoch = epoch + 1
+            
+            training_info_block = (
+                f"{PARAM_ICONS['time']} time: {datetime.datetime.now().strftime('%Y.%m.%d-%H:%M:%S')}\n"
+                f"{PARAM_ICONS['cost']} epoch_cost: {(epoch_end_time - epoch_start_time):.2f}s\n"
+                f"{PARAM_ICONS['best_epoch']} Best Epoch: {best_epoch} (Loss: {best_loss:.4f})\n"
+                f"🚀 Current LR: [green]{current_lr:.7f}[/green]"
             )
-
-            # 输出
-            write_info = (
-                epoch_s +
+            
+            console_output = (
                 "\n========= 训练配置 =========\n" +
-                params_block +
-                "\n========= 性能指标 =========\n" +
+                build_params_block(cfg) +
+                "\n========= 性能指标 (Validation) =========\n" +
                 tabulate(metrics_table, headers=metrics_table_header, tablefmt='grid') + "\n" +
                 "\n========= 训练状态 =========\n" +
-                training_info
+                training_info_block
             )
-
-            color.print(write_info)
-
-            # 保存结果
-            runing_logs_path = f'{args.training_results_path}/{args.runing_logs}/{args.model}/{args.loss_fn}-{args.scheduler}'
-            if args.elnloss:
-                results_file = f"{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}_{detailed_time_str}.txt"
-            else:
-                results_file = f"{args.optimizer}-lr_{args.lr}-wd_{args.wd}_{detailed_time_str}.txt"
-            file_path = os.path.join(runing_logs_path, results_file)
-
-            if not os.path.exists(os.path.dirname(file_path)):
-                os.makedirs(os.path.dirname(file_path))
-            if args.save_flag:
-                with open(file_path, "a") as f:
-                    f.write(write_info)                      
-       
-        if args.save_flag:
-            # 保存best模型
-            if args.elnloss:
-                weights_path = f"{args.training_results_path}/{args.weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-l1_{args.l1_lambda}-l2_{args.l2_lambda}/{detailed_time_str}"  # 保存权重路径
-            else:
-                weights_path = f"{args.training_results_path}/{args.weight}/{args.model}/{args.loss_fn}-{args.scheduler}/{args.optimizer}-lr_{args.lr}-wd_{args.wd}/{detailed_time_str}"
-                
-            if not os.path.exists(weights_path):
-                os.makedirs(weights_path)
-
-            save_file = {"model"        : model.state_dict(),
-                        "optimizer"     : optimizer.state_dict(),
-                        "Metrics"       : metrics.state_dict(),
-                        "scheduler"     : scheduler.state_dict(),
-                        "best_mean_loss": best_mean_loss,
-                        "best_epoch"    : best_epoch,
-                        "step"          : scheduler.last_epoch,
-                        "model_info"    : model_info}
             
-            # 保存当前最佳模型的权重
-            best_model_path = f"{weights_path}/model_best_ep_{best_epoch}.pth"
-            torch.save(save_file, best_model_path)
-            color.print(f"✨Best model saved at epoch: {best_epoch} ✨with mean loss: {best_mean_loss}")
+            color.print(console_output)
             
-            # 删除之前保存的所有包含"model_best"的文件
-            path_list = os.listdir(weights_path)
-            for i in path_list:
-                if "model_best" in i and i != f"model_best_ep_{best_epoch}.pth":
-                    os.remove(os.path.join(weights_path, i))
-                    color.print(f"✅[yellow]remove last best weight[yellow]:[red]{i}[/red]")                         
-
-            # # 保存最后三个epoch权重
-            # if os.path.exists(f"{weights_path}/model_ep_{epoch-3}.pth"):
-            #     os.remove(f"{weights_path}/model_ep_{epoch-3}.pth")
+            # 保存运行日志
+            if cfg.LOG.SAVE_FLAG:
+                log_file_path = os.path.join(logs_path, "run_log.txt")
+                with open(log_file_path, "a", encoding="utf-8") as f:
+                    f.write(console_output + "\n\n")
+            
+            # 保存最佳模型
+            if avg_val_total_loss < best_loss:
+                best_loss = avg_val_total_loss
+                best_epoch = epoch + 1
+                patience = 0
                 
-            # if not os.path.exists(weights_path):
-            #     os.makedirs(weights_path)
-            # torch.save(save_file, f"{weights_path}/model_ep_{epoch}.pth") 
+                if cfg.LOG.SAVE_FLAG:
+                    save_file = {
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'scheduler_state_dict': scheduler.state_dict(),
+                        'epoch': best_epoch,
+                        'best_loss': best_loss,
+                        'cfg': cfg.dump(),
+                        'model_info': model_info
+                    }
+                    
+                    # 删除旧的最佳模型
+                    for f in Path(weights_path).glob("model_best_*.pth"):
+                        f.unlink()
+                    
+                    # 保存新的最佳模型
+                    best_model_path = f"{weights_path}/model_best_ep_{best_epoch}.pth"
+                    torch.save(save_file, best_model_path)
+                    color.print(f"✨ Best model saved at epoch: {best_epoch} ✨ with loss: {best_loss:.4f}")
+            else:
+                patience += 1
         
-        # 记录验证loss是否出现上升       
-        if val_total_loss <= current_mean_loss:
-            current_mean_loss = val_total_loss 
-            patience = 0   
-        else:
-            patience += 1 
-    
-        # 早停判断
-        if patience >= 30:    
-            color.print('恭喜你触发早停！！')
+        # 早停检查
+        if patience >= cfg.TRAIN.EARLY_STOP_PATIENCE:
+            color.print(f'✅ Early stopping triggered after {patience} epochs.')
             break
-
-    writer.close()
+    
+    # 训练结束
+    if writer:
+        writer.close()
+    if swanlab_active:
+        swanlab.finish()
+    
     total_time = time.time() - initial_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    color.print("✅training over. ⏳total time: {}".format(total_time_str))
-        
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="train model on SEM stone dataset")
-    # 保存路径
-    parser.add_argument('--data_path',          type=str, 
-                        default="./datasets/CSV/shale_256.csv", 
-                        help="path to csv dataset")
-    
-    # results
-    parser.add_argument('--training_results_path',   type=str, 
-                        default='./training_results')
-    
-    parser.add_argument('--runing_logs',   type=str, 
-                        default='runing_logs')
-    
-    parser.add_argument('--weight',   type=str,
-                        default="weights")
-    
-    parser.add_argument('--tb_logs',  type=str,
-                        default="tb_logs")
-    
-    parser.add_argument('--modification', type=str,
-                        default="mdf_args_log")
-    
-    # 模型配置
-    parser.add_argument('--model',              type=str, 
-                        default="att_unet", 
-                        help=" unet, ResD_unet, unetpulsplus, att_unet, ds_dw_unet, rdam_unet, ma_unet, mamba_aunet, a_unet, m_unet, aw_unet, aicunet, dwrdam_unetv2\
-                               Segnet, deeplabv3_resnet50, deeplabv3_mobilenetv3_large, pspnet, u2net_full, u2net_lite,")
-    
-    parser.add_argument('--loss_fn',            type=str, 
-                        default='DiceLoss', 
-                        help="'CrossEntropyLoss', 'FocalLoss', 'ce_dice', DS_Dice, 'DiceLoss', 'WDiceLoss', 'DWDLoss', 'IoULoss', 'dice_hd'")
-    
-    parser.add_argument('--optimizer',          type=str, 
-                        default='AdamW', 
-                        help="'AdamW', 'SGD' or 'RMSprop'.")
-    
-    parser.add_argument('--scheduler',          type=str, 
-                        default='CosineAnnealingLR', 
-                        help="'CosineAnnealingLR', 'ReduceLROnPlateau'.")
-    
-    parser.add_argument('--class_names',        type=list,
-                        default=['OM', 'OP', 'IOP'],
-                        help="class names for the dataset, excluding background")
-    
-    # 正则化
-    parser.add_argument('--elnloss',        type=bool,  default=True)
-    parser.add_argument('--l1_lambda',      type=float, default=0.0001)
-    parser.add_argument('--l2_lambda',      type=float, default=0.0001)
-    parser.add_argument('--dropout_p',      type=float, default=0.2  )
-     
-    parser.add_argument('--device',         type=str,   default='cuda:0')
-    parser.add_argument('--resume',         type=str,   default=None,   help="the path of weight for resuming")
-    parser.add_argument('--amp',            type=bool,  default=True,   help='use mixed precision training or not')
-    
-    # flag参数
-    parser.add_argument('--tb',             type=bool,  default=True,   help='use tensorboard or not')   
-    parser.add_argument('--save_flag',      type=bool,  default=True,   help='save weights or not')    
-    parser.add_argument('--split_flag',     type=bool,  default=False,  help='split data or not')
-    parser.add_argument('--mdf_params',     type=bool,  default=False,  help='change params or not')       
-    
-    # 训练参数
-    parser.add_argument('--train_ratio',    type=float, default=0.7) 
-    parser.add_argument('--val_ratio',      type=float, default=0.2)
-    parser.add_argument('--batch_size',     type=int,   default=8 ) 
-    parser.add_argument('--start_epoch',    type=int,   default=0,      help='start epoch')
-    parser.add_argument('--end_epoch',      type=int,   default=200,    help='ending epoch')
-    parser.add_argument('--warmup_epochs',  type=int,   default=5,      help='number of warmup epochs')
-    parser.add_argument('--lr',             type=float, default=5e-4,   help='learning rate')
-    parser.add_argument('--wd',             type=float, default=0,      help='weight decay')
-    parser.add_argument('--eval_interval',  type=int,   default=1,      help='interval for evaluation')
-    parser.add_argument('--num_small_data', type=int,   default=None,   help='number of small data')
-    parser.add_argument('--Tmax',           type=int,   default=60,     help='the numbers of half of T for CosineAnnealingLR')
-    parser.add_argument('--eta_min',        type=float, default=1e-8,   help='minimum of lr for CosineAnnealingLR')
+    color.print(f"✅ Training finished. ⏳ Total time: {total_time_str}")
 
-    # 数据增强
-    parser.add_argument("--root_path",   default = "./datasets",            type=str,       help="root path")
-    parser.add_argument("--imgsz",       default = "256",                                                   type=str,       help="size of img and mask") 
-    parser.add_argument("--aug_times",   default = 60,    
-                                                                          type=int,       help="augmentation times")
-    # yaml配置
-    parser.add_argument("--config_yaml", type=str, default=None, help="path to the yaml config file")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Train a segmentation model with YAML config.")
+    parser.add_argument('--cfg', type=str, default="configs/unet_default.yaml", 
+                       help='Path to the .yaml config file.')
+    parser.add_argument(
+        "--opts",
+        help="Modify config options by adding 'KEY VALUE' pairs.",
+        default=None,
+        nargs='+',
+    )
+    
     args = parser.parse_args()
-    main(args)
-   
+    cfg = get_config(args)
+    main(cfg)

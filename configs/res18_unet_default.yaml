@@ -1,0 +1,34 @@
+MODEL:
+  NAME: 'res18_unet'
+  RESUME: None 
+  DROPOUT_P: 0.2
+
+TRAIN:
+  EARLY_STOP_PATIENCE: 30
+
+  OPTIMIZER: 
+    NAME: 'AdamW'
+    BASE_LR: 5e-4
+    WEIGHT_DECAY: 0.0
+
+  SCHEDULER:
+    NAME: 'CosineAnnealingLR'
+    WARMUP_EPOCHS: 5
+    COSINE_T_MAX: 60
+    COSINE_ETA_MIN: 1e-8
+
+  LOSS:
+    NAME: 'DiceLoss'
+    ELN_LOSS: True
+    L1_LAMBDA: 1e-4
+    L2_LAMBDA: 1e-4
+
+LOG:
+  USE_TENSORBOARD: True
+  USE_SWANLAB: True
+  SAVE_FLAG: True
+  MDF_PARAMS: False
+
+DATA:
+  BATCH_SIZE: 8
+  VALID_BATCH_SIZE: 8
